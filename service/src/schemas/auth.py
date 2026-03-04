@@ -1,0 +1,28 @@
+import uuid
+
+from pydantic import BaseModel
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class TokenPayload(BaseModel):
+    sub: uuid.UUID
+    email: str
+    name: str
+    wid: uuid.UUID
+    wslug: str
+    wrole: str
+    groups: list[uuid.UUID]
+
+
+class ProviderListResponse(BaseModel):
+    providers: list[str]

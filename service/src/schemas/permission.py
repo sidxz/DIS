@@ -1,0 +1,71 @@
+import uuid
+from datetime import datetime
+
+from pydantic import BaseModel, Field
+
+
+class PermissionCheckItem(BaseModel):
+    service_name: str
+    resource_type: str
+    resource_id: uuid.UUID
+    action: str = Field(pattern=r"^(view|edit)$")
+
+
+class PermissionCheckRequest(BaseModel):
+    checks: list[PermissionCheckItem]
+
+
+class PermissionCheckResult(BaseModel):
+    service_name: str
+    resource_type: str
+    resource_id: uuid.UUID
+    action: str
+    allowed: bool
+
+
+class PermissionCheckResponse(BaseModel):
+    results: list[PermissionCheckResult]
+
+
+class RegisterResourceRequest(BaseModel):
+    service_name: str
+    resource_type: str
+    resource_id: uuid.UUID
+    workspace_id: uuid.UUID
+    owner_id: uuid.UUID
+    visibility: str = Field(default="workspace", pattern=r"^(private|workspace)$")
+
+
+class UpdateVisibilityRequest(BaseModel):
+    visibility: str = Field(pattern=r"^(private|workspace)$")
+
+
+class ShareRequest(BaseModel):
+    grantee_type: str = Field(pattern=r"^(user|group)$")
+    grantee_id: uuid.UUID
+    permission: str = Field(pattern=r"^(view|edit)$")
+
+
+class ResourcePermissionResponse(BaseModel):
+    id: uuid.UUID
+    service_name: str
+    resource_type: str
+    resource_id: uuid.UUID
+    workspace_id: uuid.UUID
+    owner_id: uuid.UUID
+    visibility: str
+    created_at: datetime
+    shares: list["ResourceShareResponse"]
+
+    model_config = {"from_attributes": True}
+
+
+class ResourceShareResponse(BaseModel):
+    id: uuid.UUID
+    grantee_type: str
+    grantee_id: uuid.UUID
+    permission: str
+    granted_by: uuid.UUID
+    granted_at: datetime
+
+    model_config = {"from_attributes": True}

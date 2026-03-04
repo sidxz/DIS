@@ -1,0 +1,51 @@
+services:
+  identity-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: identity
+      POSTGRES_USER: identity
+      POSTGRES_PASSWORD: identity_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - identity_pg_data:/var/lib/postgresql/data
+    networks:
+      - docu_store-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  identity-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    networks:
+      - docu_store-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  identity-service:
+    build: ./service
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    depends_on:
+      identity-postgres:
+        condition: service_healthy
+      identity-redis:
+        condition: service_healthy
+    networks:
+      - docu_store-network
+
+volumes:
+  identity_pg_data:
+
+networks:
+  docu_store-network:
+    external: true

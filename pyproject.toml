@@ -1,0 +1,13 @@
+[project]
+name = "daikon-identity-service"
+version = "0.1.0"
+description = "Daikon Identity — authentication, workspace management & permissions microservice"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["daikon-identity-sdk", "uvicorn[standard]>=0.34.0"]
+
+[tool.uv.sources]
+daikon-identity-sdk = { workspace = true }
+
+[tool.uv.workspace]
+members = ["service", "sdk"]
