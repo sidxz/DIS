@@ -1,15 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  addGroupMember,
+  createGroup,
+  deleteGroup,
+  deleteWorkspace,
+  getGroupMembers,
   getWorkspace,
   getWorkspaceGroups,
   getWorkspaceMembers,
   inviteMember,
   removeMember,
+  removeGroupMember,
+  updateGroup,
   updateMemberRole,
+  updateWorkspace,
 } from "../api/client";
 import { RoleBadge } from "../components/Badge";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 
 const TABS = ["Members", "Groups"] as const;
@@ -17,14 +26,46 @@ type Tab = (typeof TABS)[number];
 
 export function WorkspaceDetail() {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<Tab>("Members");
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<Tab>("Members");
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteSlug, setDeleteSlug] = useState("");
+  const [editForm, setEditForm] = useState({ name: "", description: "" });
 
   const { data: workspace } = useQuery({
     queryKey: ["workspace", id],
     queryFn: () => getWorkspace(id!),
     enabled: !!id,
   });
+
+  const update = useMutation({
+    mutationFn: () =>
+      updateWorkspace(id!, {
+        name: editForm.name || undefined,
+        description: editForm.description,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace", id] });
+      setShowEdit(false);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteWorkspace(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      navigate("/workspaces");
+    },
+  });
+
+  const openEdit = () => {
+    if (workspace) {
+      setEditForm({ name: workspace.name, description: workspace.description ?? "" });
+    }
+    setShowEdit(true);
+  };
 
   if (!workspace) return <div className="animate-pulse h-64 bg-zinc-800/30 rounded-lg" />;
 
@@ -38,13 +79,32 @@ export function WorkspaceDetail() {
 
       {/* Header */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-        <h2 className="text-lg font-semibold">{workspace.name}</h2>
-        <div className="text-sm text-zinc-400 mt-0.5">{workspace.slug}</div>
-        {workspace.description && (
-          <div className="text-sm text-zinc-500 mt-2">{workspace.description}</div>
-        )}
-        <div className="text-xs text-zinc-500 mt-2">
-          Created {new Date(workspace.created_at).toLocaleDateString()}
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">{workspace.name}</h2>
+            <div className="text-sm text-zinc-400 mt-0.5">{workspace.slug}</div>
+            {workspace.description && (
+              <div className="text-sm text-zinc-500 mt-2">{workspace.description}</div>
+            )}
+            <div className="text-xs text-zinc-500 mt-2">
+              Created {new Date(workspace.created_at).toLocaleDateString()}
+              {" · "}{workspace.member_count} members · {workspace.group_count} groups
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={openEdit}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => { setShowDelete(true); setDeleteSlug(""); }}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 ring-1 ring-red-500/20 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </div>
 
@@ -67,6 +127,53 @@ export function WorkspaceDetail() {
 
       {tab === "Members" && <MembersTab workspaceId={id!} />}
       {tab === "Groups" && <GroupsTab workspaceId={id!} />}
+
+      {/* Edit modal */}
+      <Modal open={showEdit} onClose={() => setShowEdit(false)} title="Edit Workspace">
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-zinc-500">Name</label>
+            <input
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">Description</label>
+            <input
+              value={editForm.description}
+              onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowEdit(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => update.mutate()}
+              disabled={update.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete confirmation */}
+      <ConfirmModal
+        open={showDelete}
+        onClose={() => setShowDelete(false)}
+        onConfirm={() => remove.mutate()}
+        title="Delete Workspace"
+        message={`This will permanently delete "${workspace.name}" and all its memberships and groups.`}
+        confirmLabel="Delete Workspace"
+        danger
+        isPending={remove.isPending}
+        confirmInput={workspace.slug}
+        confirmInputValue={deleteSlug}
+        onConfirmInputChange={setDeleteSlug}
+      />
     </div>
   );
 }
@@ -165,6 +272,9 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
               <option key={r} value={r}>{r}</option>
             ))}
           </select>
+          {invite.isError && (
+            <div className="text-xs text-red-400">{(invite.error as Error).message}</div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button onClick={() => setShowInvite(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
             <button
@@ -182,27 +292,228 @@ function MembersTab({ workspaceId }: { workspaceId: string }) {
 }
 
 function GroupsTab({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient();
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", description: "" });
+  const [addMemberEmail, setAddMemberEmail] = useState("");
+
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ["workspace-groups", workspaceId],
     queryFn: () => getWorkspaceGroups(workspaceId),
   });
 
+  const { data: members = [] } = useQuery({
+    queryKey: ["workspace-members", workspaceId],
+    queryFn: () => getWorkspaceMembers(workspaceId),
+  });
+
+  const { data: groupMembers = [] } = useQuery({
+    queryKey: ["group-members", expandedGroup],
+    queryFn: () => getGroupMembers(expandedGroup!),
+    enabled: !!expandedGroup,
+  });
+
+  const create = useMutation({
+    mutationFn: () => createGroup(workspaceId, { name: form.name, description: form.description || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-groups", workspaceId] });
+      setShowCreate(false);
+      setForm({ name: "", description: "" });
+    },
+  });
+
+  const edit = useMutation({
+    mutationFn: () => updateGroup(editingGroup!, { name: form.name, description: form.description }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-groups", workspaceId] });
+      setEditingGroup(null);
+      setForm({ name: "", description: "" });
+    },
+  });
+
+  const del = useMutation({
+    mutationFn: (gid: string) => deleteGroup(gid),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workspace-groups", workspaceId] });
+      setExpandedGroup(null);
+    },
+  });
+
+  const addMember = useMutation({
+    mutationFn: (userId: string) => addGroupMember(expandedGroup!, userId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] });
+      setAddMemberEmail("");
+    },
+  });
+
+  const removeMemberMut = useMutation({
+    mutationFn: (userId: string) => removeGroupMember(expandedGroup!, userId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["group-members", expandedGroup] }),
+  });
+
   if (isLoading) return <div className="h-32 bg-zinc-800/30 rounded-lg animate-pulse" />;
 
+  const selectedMember = members.find((m) => m.email === addMemberEmail);
+
   return (
-    <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
-      {groups.map((g) => (
-        <div key={g.id} className="px-4 py-3">
-          <div className="text-sm font-medium">{g.name}</div>
-          {g.description && <div className="text-xs text-zinc-500 mt-0.5">{g.description}</div>}
-          <div className="text-xs text-zinc-600 mt-1">
-            Created {new Date(g.created_at).toLocaleDateString()}
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          onClick={() => { setShowCreate(true); setForm({ name: "", description: "" }); }}
+          className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+        >
+          + Create Group
+        </button>
+      </div>
+
+      <div className="rounded-lg border border-zinc-800 divide-y divide-zinc-800/50">
+        {groups.map((g) => (
+          <div key={g.id}>
+            <div
+              className="flex items-center justify-between px-4 py-3 hover:bg-zinc-800/40 cursor-pointer transition-colors"
+              onClick={() => setExpandedGroup(expandedGroup === g.id ? null : g.id)}
+            >
+              <div>
+                <div className="text-sm font-medium">{g.name}</div>
+                {g.description && <div className="text-xs text-zinc-500 mt-0.5">{g.description}</div>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingGroup(g.id);
+                    setForm({ name: g.name, description: g.description ?? "" });
+                  }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); del.mutate(g.id); }}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  Delete
+                </button>
+                <span className="text-xs text-zinc-600">{expandedGroup === g.id ? "▲" : "▼"}</span>
+              </div>
+            </div>
+
+            {/* Expanded group members */}
+            {expandedGroup === g.id && (
+              <div className="px-4 pb-3 space-y-2 bg-zinc-800/20">
+                <div className="flex items-center gap-2 pt-2">
+                  <select
+                    value={addMemberEmail}
+                    onChange={(e) => setAddMemberEmail(e.target.value)}
+                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-300"
+                  >
+                    <option value="">Select member to add...</option>
+                    {members
+                      .filter((m) => !groupMembers.some((gm) => gm.user_id === m.user_id))
+                      .map((m) => (
+                        <option key={m.user_id} value={m.email}>
+                          {m.name} ({m.email})
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (selectedMember) addMember.mutate(selectedMember.user_id);
+                    }}
+                    disabled={!selectedMember || addMember.isPending}
+                    className="px-2 py-1.5 rounded text-xs font-medium bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="divide-y divide-zinc-800/50">
+                  {groupMembers.map((gm) => (
+                    <div key={gm.user_id} className="flex items-center justify-between py-2">
+                      <div className="text-sm">
+                        <span className="text-zinc-300">{gm.name}</span>
+                        <span className="text-zinc-500 ml-2 text-xs">{gm.email}</span>
+                      </div>
+                      <button
+                        onClick={() => removeMemberMut.mutate(gm.user_id)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  {groupMembers.length === 0 && (
+                    <div className="py-2 text-xs text-zinc-500">No members in this group</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {groups.length === 0 && (
+          <div className="px-4 py-8 text-center text-sm text-zinc-500">No groups</div>
+        )}
+      </div>
+
+      {/* Create group modal */}
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Group">
+        <div className="space-y-3">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            placeholder="Group name"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <input
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            placeholder="Description (optional)"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          {create.isError && (
+            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => create.mutate()}
+              disabled={!form.name || create.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              Create
+            </button>
           </div>
         </div>
-      ))}
-      {groups.length === 0 && (
-        <div className="px-4 py-8 text-center text-sm text-zinc-500">No groups</div>
-      )}
+      </Modal>
+
+      {/* Edit group modal */}
+      <Modal open={!!editingGroup} onClose={() => setEditingGroup(null)} title="Edit Group">
+        <div className="space-y-3">
+          <input
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <input
+            value={form.description}
+            onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            placeholder="Description"
+            className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+          />
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setEditingGroup(null)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => edit.mutate()}
+              disabled={edit.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

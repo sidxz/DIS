@@ -1,16 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getUsers } from "../api/client";
 import { StatusBadge } from "../components/Badge";
+import { CsvImportModal } from "../components/CsvImportModal";
 import { DataTable } from "../components/DataTable";
 import { SearchInput } from "../components/SearchInput";
 import type { User } from "../types/api";
 
 export function Users() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [showImport, setShowImport] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["users", page, search],
@@ -59,7 +62,15 @@ export function Users() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Users</h1>
-        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search users..." />
+        <div className="flex items-center gap-3">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search users..." />
+          <button
+            onClick={() => setShowImport(true)}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-800 hover:bg-zinc-700 transition-colors"
+          >
+            + Import CSV
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -77,6 +88,12 @@ export function Users() {
           )}
         </>
       )}
+
+      <CsvImportModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        onComplete={() => queryClient.invalidateQueries({ queryKey: ["users"] })}
+      />
     </div>
   );
 }

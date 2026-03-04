@@ -1,20 +1,45 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getWorkspaces } from "../api/client";
+import { getWorkspaces, createWorkspace } from "../api/client";
 import { DataTable } from "../components/DataTable";
+import { Modal } from "../components/Modal";
 import { SearchInput } from "../components/SearchInput";
 import type { Workspace } from "../types/api";
 
 export function Workspaces() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: "", slug: "", description: "" });
 
   const { data, isLoading } = useQuery({
     queryKey: ["workspaces", page, search],
     queryFn: () => getWorkspaces(page, 20, search || undefined),
   });
+
+  const create = useMutation({
+    mutationFn: () =>
+      createWorkspace({
+        name: form.name,
+        slug: form.slug,
+        description: form.description || undefined,
+      }),
+    onSuccess: (ws) => {
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      setShowCreate(false);
+      setForm({ name: "", slug: "", description: "" });
+      navigate(`/workspaces/${ws.id}`);
+    },
+  });
+
+  const autoSlug = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
 
   const columns = [
     {
@@ -56,7 +81,15 @@ export function Workspaces() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Workspaces</h1>
-        <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search workspaces..." />
+        <div className="flex items-center gap-3">
+          <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1); }} placeholder="Search workspaces..." />
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white transition-colors"
+          >
+            + Create Workspace
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -81,6 +114,57 @@ export function Workspaces() {
           )}
         </>
       )}
+
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Create Workspace">
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-zinc-500">Name</label>
+            <input
+              value={form.name}
+              onChange={(e) => {
+                const name = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  name,
+                  slug: f.slug === autoSlug(f.name) ? autoSlug(name) : f.slug,
+                }));
+              }}
+              placeholder="My Workspace"
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">Slug</label>
+            <input
+              value={form.slug}
+              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+              placeholder="my-workspace"
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">Description (optional)</label>
+            <input
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+          </div>
+          {create.isError && (
+            <div className="text-xs text-red-400">{(create.error as Error).message}</div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button onClick={() => setShowCreate(false)} className="px-3 py-1.5 rounded text-xs text-zinc-400 hover:text-zinc-200">Cancel</button>
+            <button
+              onClick={() => create.mutate()}
+              disabled={!form.name || !form.slug || create.isPending}
+              className="px-3 py-1.5 rounded text-xs font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50"
+            >
+              {create.isPending ? "Creating..." : "Create"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
