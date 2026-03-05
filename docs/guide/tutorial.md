@@ -74,6 +74,20 @@ app.add_middleware(
 
 After this, every request (except excluded paths) must include a valid `Authorization: Bearer <token>` header.
 
+!!! tip "Restricting to specific workspaces"
+    If your app should only be accessible to members of certain workspaces, add the `allowed_workspaces` parameter:
+
+    ```python
+    app.add_middleware(
+        JWTAuthMiddleware,
+        public_key=PUBLIC_KEY,
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+        allowed_workspaces={"your-workspace-uuid"},
+    )
+    ```
+
+    Users from other workspaces will receive a `403 Forbidden` response. See [Middleware — Restricting by Workspace](../sdk/middleware.md#restricting-by-workspace) for details.
+
 ## Step 3: First Protected Endpoint
 
 Use `get_current_user` to access the authenticated user's JWT claims:
@@ -267,11 +281,14 @@ The demo frontend is a React SPA that handles OAuth login through the identity s
 
 ### Auth Flow
 
-1. User clicks "Sign in with Google" → navigates to `http://localhost:9003/auth/login/google`
-2. After OAuth, identity service redirects to `http://localhost:9101/auth/callback?user_id=X`
-3. Frontend fetches the user's workspaces: `GET /auth/workspaces?user_id=X`
-4. User selects a workspace → `POST /auth/token` exchanges for JWT tokens
+1. User clicks "Sign in with Google" → navigates to `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9101/auth/callback`
+2. After OAuth, identity service redirects to `http://localhost:9101/auth/callback?code=X`
+3. Frontend fetches the user's workspaces: `GET /auth/workspaces?code=X`
+4. User selects a workspace → `POST /auth/token` with `{code, workspace_id}` exchanges for JWT tokens (code is single-use)
 5. Tokens stored in localStorage, attached to all API calls
+
+!!! note "Client app registration"
+    The demo app must be registered as a client app in the identity service before login will work. Create one via the admin API (`POST /admin/client-apps`) with `redirect_uris: ["http://localhost:9101/auth/callback"]`.
 
 ### Token Management
 
@@ -292,7 +309,7 @@ if (res.status === 401) {
 
 ### Identity Service Config
 
-Set `FRONTEND_URL=http://localhost:9101` in `service/.env` so the OAuth callback redirects to the demo app.
+Register the demo app as a client app with `redirect_uris: ["http://localhost:9101/auth/callback"]`. This adds the demo app's redirect URI to the allowlist, permitting it to initiate OAuth flows through Sentinel.
 
 ## Step 11: Run Everything
 

@@ -76,3 +76,30 @@ class TestJWTMiddleware:
         client = TestClient(_make_app(pub))
         resp = client.get("/protected", headers={"Authorization": "Basic abc"})
         assert resp.status_code == 401
+
+    def test_allowed_workspaces_permits_matching(self, rsa_keypair, valid_token, workspace_id):
+        _, pub = rsa_keypair
+        app = _make_app(pub)
+        # Re-create with allowed_workspaces containing the token's workspace
+        app = Starlette(routes=[Route("/protected", _make_app(pub).routes[0].endpoint)])
+        app.add_middleware(JWTAuthMiddleware, public_key=pub, allowed_workspaces={str(workspace_id)})
+        client = TestClient(app)
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
+        assert resp.status_code == 200
+
+    def test_allowed_workspaces_rejects_non_matching(self, rsa_keypair, valid_token):
+        _, pub = rsa_keypair
+        app = Starlette(routes=[Route("/protected", _make_app(pub).routes[0].endpoint)])
+        allowed = {"00000000-0000-0000-0000-000000000000"}
+        app.add_middleware(JWTAuthMiddleware, public_key=pub, allowed_workspaces=allowed)
+        client = TestClient(app)
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
+        assert resp.status_code == 403
+        assert "Workspace not permitted" in resp.json()["detail"]
+
+    def test_allowed_workspaces_none_allows_all(self, rsa_keypair, valid_token):
+        _, pub = rsa_keypair
+        # Default behavior (None) — should allow any workspace
+        client = TestClient(_make_app(pub))
+        resp = client.get("/protected", headers={"Authorization": f"Bearer {valid_token}"})
+        assert resp.status_code == 200
