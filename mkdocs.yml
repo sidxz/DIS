@@ -94,6 +94,7 @@ nav:
     - Workspaces: guide/workspaces.md
     - Groups: guide/groups.md
     - Permissions: guide/permissions.md
+    - Roles: guide/roles.md
     - Service Auth: guide/service-auth.md
     - Admin Panel: guide/admin.md
   - SDK:
@@ -102,6 +103,7 @@ nav:
     - Middleware: sdk/middleware.md
     - Dependencies: sdk/dependencies.md
     - Permission Client: sdk/permission-client.md
+    - Role Client: sdk/role-client.md
     - Integration Guide: sdk/integration.md
     - Examples: sdk/examples.md
   - API Reference:
@@ -111,6 +113,7 @@ nav:
     - Workspaces: api/workspaces.md
     - Groups: api/groups.md
     - Permissions: api/permissions.md
+    - Roles: api/roles.md
     - Schemas: api/schemas.md
   - SDK Reference:
     - reference/index.md

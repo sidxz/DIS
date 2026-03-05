@@ -11,6 +11,7 @@ import jwt
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from identity_sdk.types import AuthenticatedUser
 
@@ -50,7 +51,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         public_key: str,
         algorithm: str = "RS256",
         exclude_paths: list[str] | None = None,
