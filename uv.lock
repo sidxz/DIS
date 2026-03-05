@@ -4,9 +4,9 @@ requires-python = ">=3.12"
 
 [manifest]
 members = [
-    "daikon-identity-sdk",
-    "daikon-identity-service",
-    "daikon-identity-service-app",
+    "daikon-sentinel",
+    "sentinel-auth",
+    "sentinel-auth-sdk",
 ]
 
 [[package]]
@@ -327,34 +327,12 @@ wheels = [
 ]
 
 [[package]]
-name = "daikon-identity-sdk"
-version = "0.1.0"
-source = { editable = "sdk" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "starlette" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=44.0.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.0" },
-    { name = "starlette", specifier = ">=0.40.0" },
-]
-
-[[package]]
-name = "daikon-identity-service"
+name = "daikon-sentinel"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "daikon-identity-sdk" },
+    { name = "sentinel-auth" },
+    { name = "sentinel-auth-sdk" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -372,57 +350,17 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "daikon-identity-sdk", editable = "sdk" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6" },
     { name = "mkdocs-glightbox", marker = "extra == 'docs'", specifier = ">=0.4" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5" },
     { name = "mkdocs-section-index", marker = "extra == 'docs'", specifier = ">=0.3" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.27" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
+    { name = "sentinel-auth", editable = "service" },
+    { name = "sentinel-auth-sdk", editable = "sdk" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
 ]
 provides-extras = ["dev", "docs"]
-
-[[package]]
-name = "daikon-identity-service-app"
-version = "0.1.0"
-source = { editable = "service" }
-dependencies = [
-    { name = "alembic" },
-    { name = "asyncpg" },
-    { name = "authlib" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "itsdangerous" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-multipart" },
-    { name = "redis" },
-    { name = "slowapi" },
-    { name = "sqlalchemy", extra = ["asyncio"] },
-    { name = "structlog" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "alembic", specifier = ">=1.14.0" },
-    { name = "asyncpg", specifier = ">=0.30.0" },
-    { name = "authlib", specifier = ">=1.4.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "pydantic", specifier = ">=2.10.0" },
-    { name = "pydantic-settings", specifier = ">=2.7.0" },
-    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.0" },
-    { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "redis", specifier = ">=5.2.0" },
-    { name = "slowapi", specifier = ">=0.1.9" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
-    { name = "structlog", specifier = ">=24.4.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
-]
 
 [[package]]
 name = "deprecated"
@@ -1221,6 +1159,70 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/51/b2/dc83cce2f38a3c72d6bf9268ef6c1708ab1b4d546074384e7e0d097bf4f6/selectolax-0.4.6-cp314-cp314t-win32.whl", hash = "sha256:f5017f6e2408160604c87fb21490d9af802d09dbc1b91ac89acd9922b7b04d31", size = 1890595, upload-time = "2025-12-06T12:35:29.625Z" },
     { url = "https://files.pythonhosted.org/packages/87/f9/8da49637643b1dffbcadc8972f1fee519c126978acaf5df59405e48424f4/selectolax-0.4.6-cp314-cp314t-win_amd64.whl", hash = "sha256:56adb0f014ab55627f20f53888a7bf1ec53aac8189fe344aec3d5077a7ad9889", size = 2005252, upload-time = "2025-12-06T12:35:31.116Z" },
     { url = "https://files.pythonhosted.org/packages/94/7f/f783e2254db082df4f6bc00fe3b32b9dd27c3b7302a44c8c37728bb67fb7/selectolax-0.4.6-cp314-cp314t-win_arm64.whl", hash = "sha256:66558cfb1c7402fed0f47b9a2692eed53e3e2f345526314b493b5093cb951e21", size = 1906079, upload-time = "2025-12-06T12:35:32.951Z" },
+]
+
+[[package]]
+name = "sentinel-auth"
+version = "0.1.0"
+source = { editable = "service" }
+dependencies = [
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "authlib" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "itsdangerous" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "python-multipart" },
+    { name = "redis" },
+    { name = "slowapi" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "alembic", specifier = ">=1.14.0" },
+    { name = "asyncpg", specifier = ">=0.30.0" },
+    { name = "authlib", specifier = ">=1.4.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "itsdangerous", specifier = ">=2.2.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pydantic-settings", specifier = ">=2.7.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.0" },
+    { name = "python-multipart", specifier = ">=0.0.9" },
+    { name = "redis", specifier = ">=5.2.0" },
+    { name = "slowapi", specifier = ">=0.1.9" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36" },
+    { name = "structlog", specifier = ">=24.4.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+]
+
+[[package]]
+name = "sentinel-auth-sdk"
+version = "0.1.0"
+source = { editable = "sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "starlette" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=44.0.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "pydantic", specifier = ">=2.10.0" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10.0" },
+    { name = "starlette", specifier = ">=0.40.0" },
 ]
 
 [[package]]

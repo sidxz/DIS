@@ -1,7 +1,7 @@
 [project]
-name = "daikon-identity-service-app"
+name = "sentinel-auth"
 version = "0.1.0"
-description = "Daikon Identity Service — FastAPI microservice"
+description = "Sentinel Auth — FastAPI microservice"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

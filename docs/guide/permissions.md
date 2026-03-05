@@ -1,6 +1,6 @@
 # Permissions
 
-The Daikon Identity Service implements a three-tier authorization model: workspace roles (stateless, embedded in the JWT), custom RBAC roles (action-based, resolved via service calls), and entity-level access control lists (Zanzibar-style, resolved via service calls). This design keeps common authorization checks fast while supporting both action-based and resource-level fine-grained access control.
+The Sentinel Auth implements a three-tier authorization model: workspace roles (stateless, embedded in the JWT), custom RBAC roles (action-based, resolved via service calls), and entity-level access control lists (Zanzibar-style, resolved via service calls). This design keeps common authorization checks fast while supporting both action-based and resource-level fine-grained access control.
 
 ## Three-Tier System
 

@@ -1,6 +1,6 @@
-# Team Notes — Daikon Identity SDK Demo
+# Team Notes — Sentinel Auth SDK Demo
 
-A simple note-taking app that demonstrates all features of the Daikon Identity SDK:
+A simple note-taking app that demonstrates all features of the Sentinel Auth SDK:
 
 - **JWT Authentication** — middleware validates RS256 tokens on every request
 - **Workspace Isolation** — notes are scoped to the active workspace

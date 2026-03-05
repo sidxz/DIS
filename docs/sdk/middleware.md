@@ -8,7 +8,7 @@ The `JWTAuthMiddleware` is a Starlette middleware that validates JWT access toke
 from pathlib import Path
 
 from fastapi import FastAPI
-from identity_sdk.middleware import JWTAuthMiddleware
+from sentinel_auth.middleware import JWTAuthMiddleware
 
 app = FastAPI()
 
@@ -179,8 +179,8 @@ After the middleware runs, you can access the user directly from `request.state`
 
 ```python
 from fastapi import Depends, Request
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 
 # Option 1: Direct access (not recommended)

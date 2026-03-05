@@ -10,7 +10,7 @@ services:
     volumes:
       - identity_pg_data:/var/lib/postgresql/data
     networks:
-      - daikon-identity-network
+      - sentinel-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U identity"]
       interval: 5s
@@ -22,14 +22,14 @@ services:
     ports:
       - "9002:6379"
     networks:
-      - daikon-identity-network
+      - sentinel-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  identity-service:
+  sentinel:
     build: ./service
     ports:
       - "9003:9003"
@@ -41,11 +41,11 @@ services:
       identity-redis:
         condition: service_healthy
     networks:
-      - daikon-identity-network
+      - sentinel-network
 
 volumes:
   identity_pg_data:
 
 networks:
-  daikon-identity-network:
+  sentinel-network:
     driver: bridge

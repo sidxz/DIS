@@ -1,6 +1,6 @@
 # Code Style
 
-This page documents the coding conventions and architectural decisions used throughout the Daikon Identity Service.
+This page documents the coding conventions and architectural decisions used throughout the Sentinel Auth.
 
 ## Async Everywhere
 

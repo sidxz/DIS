@@ -45,7 +45,7 @@ async def _run_migrations():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("daikon-identity-service starting", port=settings.service_port)
+    logger.info("daikon-sentinel starting", port=settings.service_port)
     await _run_migrations()
     logger.info("database migrations applied")
 
@@ -63,11 +63,11 @@ async def lifespan(app: FastAPI):
 
     app.state.start_time = time.time()
     yield
-    logger.info("daikon-identity-service shutting down")
+    logger.info("daikon-sentinel shutting down")
 
 
 app = FastAPI(
-    title="Daikon Identity Service",
+    title="Sentinel Auth",
     description="Authentication, workspace management, and permissions",
     version="0.1.0",
     lifespan=lifespan,

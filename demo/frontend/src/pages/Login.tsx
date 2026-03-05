@@ -7,7 +7,7 @@ export function Login() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-100">Team Notes</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Daikon Identity SDK Demo
+            Sentinel Auth SDK Demo
           </p>
         </div>
 
@@ -26,7 +26,7 @@ export function Login() {
         </div>
 
         <div className="space-y-2 text-xs text-zinc-600">
-          <p>Powered by Daikon Identity Service</p>
+          <p>Powered by Sentinel Auth</p>
           <div className="flex justify-center gap-4">
             <span>JWT Auth</span>
             <span>&middot;</span>

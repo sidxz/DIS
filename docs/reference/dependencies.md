@@ -1,3 +1,3 @@
 # Dependencies
 
-::: identity_sdk.dependencies
+::: sentinel_auth.dependencies

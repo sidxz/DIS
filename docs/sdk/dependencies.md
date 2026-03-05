@@ -12,10 +12,10 @@ The SDK provides a set of FastAPI dependency functions that extract authenticati
 | `require_role(minimum_role)` | `AuthenticatedUser` | Enforce a minimum workspace role |
 | `require_action(role_client, action)` | `AuthenticatedUser` | Enforce an RBAC action |
 
-All dependencies are importable from `identity_sdk.dependencies`:
+All dependencies are importable from `sentinel_auth.dependencies`:
 
 ```python
-from identity_sdk.dependencies import (
+from sentinel_auth.dependencies import (
     get_current_user,
     get_workspace_id,
     get_workspace_context,
@@ -38,8 +38,8 @@ def get_current_user(request: Request) -> AuthenticatedUser
 
 ```python
 from fastapi import Depends
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/me")
@@ -81,7 +81,7 @@ def get_workspace_id(
 from uuid import UUID
 
 from fastapi import Depends
-from identity_sdk.dependencies import get_workspace_id
+from sentinel_auth.dependencies import get_workspace_id
 
 
 @router.get("/documents")
@@ -120,8 +120,8 @@ def get_workspace_context(
 
 ```python
 from fastapi import Depends
-from identity_sdk.dependencies import get_workspace_context
-from identity_sdk.types import WorkspaceContext
+from sentinel_auth.dependencies import get_workspace_context
+from sentinel_auth.types import WorkspaceContext
 
 
 @router.post("/documents")
@@ -160,8 +160,8 @@ viewer < editor < admin < owner
 
 ```python
 from fastapi import Depends
-from identity_sdk.dependencies import require_role
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import require_role
+from sentinel_auth.types import AuthenticatedUser
 
 
 # Only editors, admins, and owners can create documents
@@ -254,8 +254,8 @@ You can combine multiple SDK dependencies in a single route:
 from uuid import UUID
 
 from fastapi import Depends
-from identity_sdk.dependencies import get_workspace_id, require_role
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_workspace_id, require_role
+from sentinel_auth.types import AuthenticatedUser
 
 
 @router.post("/documents")
@@ -296,9 +296,9 @@ def require_action(role_client: "RoleClient", action: str) -> Callable
 **Usage:**
 
 ```python
-from identity_sdk.dependencies import require_action
-from identity_sdk.roles import RoleClient
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import require_action
+from sentinel_auth.roles import RoleClient
+from sentinel_auth.types import AuthenticatedUser
 
 roles = RoleClient(
     base_url="http://identity-service:8000",

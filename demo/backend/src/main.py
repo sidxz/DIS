@@ -1,12 +1,12 @@
-"""Team Notes — demo app showcasing the Daikon Identity SDK."""
+"""Team Notes — demo app showcasing the Sentinel Auth SDK."""
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.roles import RoleClient
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.roles import RoleClient
 
 from src.config import settings
 
@@ -17,12 +17,12 @@ PUBLIC_KEY = settings.public_key_path.read_text()
 async def lifespan(app: FastAPI):
     # Initialize SDK clients
     app.state.permissions = PermissionClient(
-        base_url=settings.identity_service_url,
+        base_url=settings.sentinel_url,
         service_name=settings.service_name,
         service_key=settings.service_api_key or None,
     )
     app.state.roles = RoleClient(
-        base_url=settings.identity_service_url,
+        base_url=settings.sentinel_url,
         service_name=settings.service_name,
         service_key=settings.service_api_key or None,
     )
@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
             {"action": "notes:bulk-delete", "description": "Bulk delete notes"},
         ])
     except Exception:
-        pass  # Identity service may not be reachable yet
+        pass  # Sentinel service may not be reachable yet
 
     yield
 
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Team Notes",
-    description="Demo app showcasing the Daikon Identity SDK — "
+    description="Demo app showcasing the Sentinel Auth SDK — "
     "workspace isolation, role enforcement, entity ACLs, and custom RBAC.",
     version="0.1.0",
     lifespan=lifespan,
@@ -81,9 +81,9 @@ if __name__ == "__main__":
     import uvicorn
 
     print("\n" + "=" * 60)
-    print("TEAM NOTES — Daikon Identity SDK Demo")
+    print("TEAM NOTES — Sentinel Auth SDK Demo")
     print("=" * 60)
-    print(f"\nIdentity service: {settings.identity_service_url}")
+    print(f"\nSentinel service: {settings.sentinel_url}")
     print(f"Demo backend:     http://localhost:{settings.port}")
     print(f"Demo frontend:    {settings.frontend_url}")
     print(f"\nAPI docs: http://localhost:{settings.port}/docs")

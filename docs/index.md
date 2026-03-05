@@ -1,11 +1,13 @@
 ---
-title: Daikon Identity Service
+title: Sentinel Auth
 description: Authentication, workspace management, and Zanzibar-style permissions for Python microservices
 ---
 
-# Daikon Identity Service
+![Sentinel Auth](assets/images/splash.png)
 
-**A production-ready identity microservice for Python applications.** Daikon handles OAuth2/OIDC authentication, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
+# Sentinel Auth
+
+**An open source identity service for Python applications.** Sentinel Auth handles OAuth2/OIDC authentication, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
 
 Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7**, and **Authlib**.
 
@@ -43,7 +45,7 @@ Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7
 
     ---
 
-    Install `daikon-identity-sdk` and integrate in minutes. The SDK handles JWT validation, permission checks, and resource registration with a clean, typed Python API.
+    Install `sentinel-auth-sdk` and integrate in minutes. The SDK handles JWT validation, permission checks, and resource registration with a clean, typed Python API.
 
     [:octicons-arrow-right-24: SDK reference](sdk/index.md)
 
@@ -77,9 +79,9 @@ Choose your path based on what you need to do:
 
     ---
 
-    You have a Python service and want to add authentication and permission checks using the Daikon Identity SDK.
+    You have a Python service and want to add authentication and permission checks using the Sentinel Auth SDK.
 
-    1. Install the SDK: `pip install daikon-identity-sdk`
+    1. Install the SDK: `pip install sentinel-auth-sdk`
     2. Configure your service key and identity service URL
     3. Use `PermissionClient` to check and manage permissions
     4. Validate JWTs to extract user and workspace context
@@ -90,7 +92,7 @@ Choose your path based on what you need to do:
 
     ---
 
-    You want to deploy the Daikon Identity Service as your authentication and authorization backend.
+    You want to deploy the Sentinel Auth as your authentication and authorization backend.
 
     1. Clone the repository and configure `.env`
     2. Set up PostgreSQL 16 and Redis 7
@@ -106,10 +108,10 @@ Choose your path based on what you need to do:
 
 ## Architecture at a Glance
 
-Daikon Identity Service sits between your frontend applications and your backend microservices:
+Sentinel Auth sits between your frontend applications and your backend microservices:
 
 ```
-Frontend App          Daikon Identity Service          Your Microservices
+Frontend App          Sentinel Auth                  Your Microservices
 -----------           -----------------------          ------------------
                       +---------------------+
   Login via    -----> | OAuth2/OIDC (Authlib)|
@@ -133,7 +135,7 @@ Frontend App          Daikon Identity Service          Your Microservices
                       +---------------------+
 ```
 
-**No local passwords.** Users always authenticate through external identity providers. Daikon manages their identity, workspace membership, group assignments, and fine-grained resource permissions.
+**No local passwords.** Users always authenticate through external identity providers. Sentinel Auth manages their identity, workspace membership, group assignments, and fine-grained resource permissions.
 
 ---
 

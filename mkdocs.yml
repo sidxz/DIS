@@ -1,24 +1,26 @@
-site_name: Daikon Identity Service
+site_name: Sentinel Auth
 site_description: Authentication, workspace management, and permissions microservice
-site_url: https://daikon-identity.dev
+site_url: https://daikon-sentinel.dev
 
-repo_name: daikon-identity-service
+repo_name: daikon-sentinel
 repo_url: https://github.com/daikon/identity-service
 
 theme:
   name: material
+  logo: assets/images/logo.png
+  favicon: assets/images/favicon.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep purple
-      accent: amber
+      primary: red
+      accent: red
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: amber
+      primary: red
+      accent: red
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -35,6 +37,9 @@ theme:
     - toc.follow
   icon:
     repo: fontawesome/brands/github
+
+extra_css:
+  - assets/css/extra.css
 
 plugins:
   - search

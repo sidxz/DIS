@@ -1,3 +1,3 @@
 # Permissions
 
-::: identity_sdk.permissions
+::: sentinel_auth.permissions

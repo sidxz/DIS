@@ -1,10 +1,10 @@
 # Integration Guide
 
-This guide walks through adding authentication and authorization to an existing FastAPI service using the Daikon Identity SDK. By the end, your service will validate JWTs, enforce workspace isolation, and check entity-level permissions.
+This guide walks through adding authentication and authorization to an existing FastAPI service using the Sentinel Auth SDK. By the end, your service will validate JWTs, enforce workspace isolation, and check entity-level permissions.
 
 ## Prerequisites
 
-- A running Daikon Identity Service instance
+- A running Sentinel Auth instance
 - The identity service's RS256 public key (`keys/public.pem`)
 - A service API key registered with the identity service
 - An existing FastAPI application to integrate with
@@ -14,7 +14,7 @@ This guide walks through adding authentication and authorization to an existing 
 Add the SDK to your project:
 
 ```bash
-uv add daikon-identity-sdk
+uv add sentinel-auth-sdk
 ```
 
 Or for local development against the monorepo:
@@ -23,11 +23,11 @@ Or for local development against the monorepo:
 # pyproject.toml
 [project]
 dependencies = [
-    "daikon-identity-sdk",
+    "sentinel-auth-sdk",
 ]
 
 [tool.uv.sources]
-daikon-identity-sdk = { path = "../identity-service/sdk", editable = true }
+sentinel-auth-sdk = { path = "../identity-service/sdk", editable = true }
 ```
 
 Then sync:
@@ -54,7 +54,7 @@ app = FastAPI(title="My Service")
 from pathlib import Path
 
 from fastapi import FastAPI
-from identity_sdk.middleware import JWTAuthMiddleware
+from sentinel_auth.middleware import JWTAuthMiddleware
 
 app = FastAPI(title="My Service")
 
@@ -75,13 +75,13 @@ Set up reusable dependencies for your routes. Create an `auth.py` module (or add
 
 ```python
 # src/dependencies/auth.py
-from identity_sdk.dependencies import (
+from sentinel_auth.dependencies import (
     get_current_user,
     get_workspace_id,
     get_workspace_context,
     require_role,
 )
-from identity_sdk.types import AuthenticatedUser, WorkspaceContext
+from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
 
 # Re-export for convenience -- routes import from here
 __all__ = [
@@ -99,7 +99,7 @@ You can also add application-specific dependencies that build on the SDK:
 ```python
 # src/dependencies/auth.py (continued)
 from fastapi import Depends, Request
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 
 def get_permissions(request: Request) -> PermissionClient:
@@ -149,8 +149,8 @@ async def delete_document(
 **After** (with auth):
 
 ```python
-from identity_sdk.dependencies import get_current_user, get_workspace_id, require_role
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user, get_workspace_id, require_role
+from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/documents")
@@ -302,7 +302,7 @@ Set up the `PermissionClient` in your application lifespan:
 ```python
 from contextlib import asynccontextmanager
 
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 
 @asynccontextmanager
@@ -404,10 +404,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from identity_sdk.dependencies import get_current_user, get_workspace_id, require_role
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user, get_workspace_id, require_role
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.types import AuthenticatedUser
 
 
 # --- Lifespan ---

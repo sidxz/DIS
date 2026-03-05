@@ -1,6 +1,6 @@
 # Database
 
-The Daikon Identity Service uses PostgreSQL 16 with SQLAlchemy 2.0 async as the ORM layer and Alembic for schema migrations.
+The Sentinel Auth uses PostgreSQL 16 with SQLAlchemy 2.0 async as the ORM layer and Alembic for schema migrations.
 
 ## Tables
 

@@ -1,6 +1,6 @@
-# Daikon Identity SDK
+# Sentinel Auth SDK
 
-The **Daikon Identity SDK** (`daikon-identity-sdk`) is a Python package that integrates your FastAPI or Starlette service with the Daikon Identity Service. It handles JWT validation, user context extraction, role enforcement, and entity-level permission checks so you can focus on your application logic.
+The **Sentinel Auth SDK** (`sentinel-auth-sdk`) is a Python package that integrates your FastAPI or Starlette service with the Sentinel Auth. It handles JWT validation, user context extraction, role enforcement, and entity-level permission checks so you can focus on your application logic.
 
 ## What the SDK Provides
 
@@ -47,8 +47,8 @@ Immutable dataclasses representing auth context:
 
 | Detail | Value |
 |--------|-------|
-| PyPI name | `daikon-identity-sdk` |
-| Import name | `identity_sdk` |
+| PyPI name | `sentinel-auth-sdk` |
+| Import name | `sentinel_auth` |
 | Python | >= 3.12 |
 | License | Proprietary |
 
@@ -68,7 +68,7 @@ The SDK depends on:
 ## Module Overview
 
 ```
-identity_sdk/
+sentinel_auth/
     __init__.py          # Re-exports AuthenticatedUser, WorkspaceContext, RoleClient
     types.py             # AuthenticatedUser, WorkspaceContext dataclasses
     middleware.py         # JWTAuthMiddleware
@@ -84,10 +84,10 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 
-from identity_sdk.dependencies import get_current_user, require_role
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user, require_role
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.types import AuthenticatedUser
 
 app = FastAPI()
 

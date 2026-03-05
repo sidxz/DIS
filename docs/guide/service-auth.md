@@ -117,7 +117,7 @@ SERVICE_API_KEYS=sk_live_abc123,sk_live_def456
 The Python SDK's `PermissionClient` handles service key headers automatically:
 
 ```python
-from identity_sdk import PermissionClient
+from sentinel_auth import PermissionClient
 
 client = PermissionClient(
     base_url="https://identity.example.com",

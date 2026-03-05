@@ -1,11 +1,11 @@
 ---
 title: Security
-description: Security architecture, authentication tiers, and hardening measures for the Daikon Identity Service
+description: Security architecture, authentication tiers, and hardening measures for the Sentinel Auth
 ---
 
 # Security
 
-This document describes the security architecture of the Daikon Identity Service, covering transport security, authentication mechanisms, token lifecycle, service-to-service auth, and input validation.
+This document describes the security architecture of the Sentinel Auth, covering transport security, authentication mechanisms, token lifecycle, service-to-service auth, and input validation.
 
 ---
 

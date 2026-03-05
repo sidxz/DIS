@@ -33,9 +33,10 @@ export function Login() {
 
   return (
     <div className="flex h-screen items-center justify-center bg-zinc-950">
-      <div className="w-full max-w-sm space-y-6 rounded-xl border border-zinc-800 bg-zinc-900 p-8">
+      <div className="w-full max-w-sm space-y-6 rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+        <img src="/splash.png" alt="Sentinel Auth" className="w-full object-cover" />
+        <div className="px-8 pb-8 space-y-6">
         <div className="text-center">
-          <h1 className="text-lg font-semibold text-zinc-100">Daikon Identity</h1>
           <p className="mt-1 text-sm text-zinc-400">Sign in to access the admin panel</p>
         </div>
 
@@ -68,6 +69,7 @@ export function Login() {
               No OAuth providers configured. Check your .env file.
             </p>
           )}
+        </div>
         </div>
       </div>
     </div>

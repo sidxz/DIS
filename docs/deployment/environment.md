@@ -1,6 +1,6 @@
 # Environment Variables
 
-Complete reference for all environment variables accepted by the Daikon Identity Service. Variables are loaded from a `.env` file in the project root or from the process environment.
+Complete reference for all environment variables accepted by the Sentinel Auth. Variables are loaded from a `.env` file in the project root or from the process environment.
 
 ## Required for Production
 

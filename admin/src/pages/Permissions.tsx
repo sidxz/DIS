@@ -13,7 +13,6 @@ import { Modal } from "../components/Modal";
 import type { AdminResourcePermission } from "../types/api";
 
 export function Permissions() {
-  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");

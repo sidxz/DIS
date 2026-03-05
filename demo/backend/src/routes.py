@@ -4,10 +4,10 @@ import uuid
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from identity_sdk.dependencies import require_action
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.roles import RoleClient
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import require_action
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.roles import RoleClient
+from sentinel_auth.types import AuthenticatedUser
 from pydantic import BaseModel
 
 from src.config import settings
@@ -18,7 +18,7 @@ from src.models import notes
 # Module-level RoleClient for require_action() factory
 # ---------------------------------------------------------------------------
 role_client = RoleClient(
-    base_url=settings.identity_service_url,
+    base_url=settings.sentinel_url,
     service_name=settings.service_name,
     service_key=settings.service_api_key or None,
 )

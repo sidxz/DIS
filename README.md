@@ -1,6 +1,9 @@
-# DAIKON IDENTITY SERVICE
+# Sentinel Auth
 
-A production-ready authentication, workspace management, and entity-level permissions microservice. Built for teams that need SSO-first identity with fine-grained authorization — without the complexity of Keycloak or Ory.
+![Sentinel Auth](docs/assets/images/splash.png)
+
+A light weight authentication, workspace management, and entity-level permissions service. Built for teams that need batteries included SSO-first identity with fine-grained authorization. 
+Ships with an Admin UI.
 
 ## Status
 
@@ -11,11 +14,10 @@ A production-ready authentication, workspace management, and entity-level permis
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-dc382d?logo=redis&logoColor=white)](https://redis.io/)
 
-## Why it exists
+## Service
 
-Modern microservice architectures need a central identity layer that does more than just login. Daikon Identity Service handles the full lifecycle: external IdP login (Google, GitHub, Microsoft EntraID), workspace isolation, group management, and a three-tier authorization model that scales from coarse role checks to per-resource Zanzibar-style ACLs.
+Modern microservice architectures need a central identity layer that does more than just login. Sentinel Auth handles the full lifecycle: external IdP login (Google, GitHub, Microsoft EntraID), workspace isolation, group management, and a three-tier authorization model that scales from coarse role checks to per-resource Zanzibar-style ACLs.
 
-Users always come from external identity providers — there is no local password management. The service stores a synced user record on login and manages everything else.
 
 ## Capabilities
 
@@ -24,7 +26,7 @@ Users always come from external identity providers — there is no local passwor
 - **Token lifecycle** with RS256 JWTs, refresh rotation, reuse detection, and Redis denylist revocation.
 - **Workspace isolation** — users, groups, roles, and permissions are scoped per workspace.
 - **Admin panel** — React SPA with full CRUD, audit logs, CSV import/export, and role management.
-- **SDK** — pip-installable `daikon-identity-sdk` with middleware, FastAPI dependencies, and HTTP clients.
+- **SDK** — pip-installable `sentinel-auth-sdk` with middleware, FastAPI dependencies, and HTTP clients.
 - **Security hardened** — rate limiting, CORS, HSTS, CSP, trusted hosts, session encryption, and a comprehensive pentest suite.
 
 ## Architecture at a glance
@@ -81,16 +83,16 @@ The API is available at `http://localhost:9003` with interactive docs at `/docs`
 Install the SDK in your consuming service:
 
 ```bash
-pip install daikon-identity-sdk
+pip install sentinel-auth-sdk
 ```
 
 Add JWT middleware and use dependency injection:
 
 ```python
 from fastapi import FastAPI, Depends
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.dependencies import get_current_user, require_role
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.dependencies import get_current_user, require_role
+from sentinel_auth.types import AuthenticatedUser
 
 app = FastAPI()
 app.add_middleware(JWTAuthMiddleware, public_key=open("public.pem").read())
@@ -107,7 +109,7 @@ async def create_thing(user: AuthenticatedUser = Depends(require_role("editor"))
 Check entity-level permissions from any backend service:
 
 ```python
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 perm = PermissionClient(base_url="http://localhost:9003", service_name="my-app")
 

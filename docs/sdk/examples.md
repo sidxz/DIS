@@ -1,6 +1,6 @@
 # Examples
 
-Common patterns for using the Daikon Identity SDK in FastAPI applications.
+Common patterns for using the Sentinel Auth SDK in FastAPI applications.
 
 ## Basic Route Protection
 
@@ -8,8 +8,8 @@ The simplest form of authentication: require a valid JWT and extract the user.
 
 ```python
 from fastapi import APIRouter, Depends
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 router = APIRouter()
 
@@ -36,8 +36,8 @@ Use `require_role` to enforce minimum role requirements on routes. The role hier
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from identity_sdk.dependencies import require_role
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import require_role
+from sentinel_auth.types import AuthenticatedUser
 
 router = APIRouter(prefix="/documents")
 
@@ -86,9 +86,9 @@ Check whether the current user can access a specific resource using the permissi
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.types import AuthenticatedUser
 
 router = APIRouter(prefix="/documents")
 
@@ -311,7 +311,7 @@ async def get_document(
 When you need to check permissions for multiple resources (e.g., enriching a list with access metadata):
 
 ```python
-from identity_sdk.permissions import PermissionCheck
+from sentinel_auth.permissions import PermissionCheck
 
 
 @router.post("/documents/access-check")
@@ -351,8 +351,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.permissions import PermissionClient
 
 
 @asynccontextmanager
@@ -386,8 +386,8 @@ For unit tests, you can override the SDK dependencies to bypass real JWT validat
 import uuid
 
 from fastapi.testclient import TestClient
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 
 def mock_user() -> AuthenticatedUser:

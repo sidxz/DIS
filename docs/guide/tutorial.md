@@ -1,6 +1,6 @@
 # Tutorial: Build Your First App
 
-This tutorial walks through building a **Team Notes** app — a FastAPI backend with a React frontend — that uses the Daikon Identity SDK for authentication, workspace isolation, role enforcement, and entity-level permissions.
+This tutorial walks through building a **Team Notes** app — a FastAPI backend with a React frontend — that uses the Sentinel Auth SDK for authentication, workspace isolation, role enforcement, and entity-level permissions.
 
 The complete source code is in the `demo/` directory of this repository.
 
@@ -37,11 +37,11 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pydantic-settings>=2.7.0",
-    "daikon-identity-sdk",
+    "sentinel-auth-sdk",
 ]
 
 [tool.uv.sources]
-daikon-identity-sdk = { path = "../../sdk", editable = true }
+sentinel-auth-sdk = { path = "../../sdk", editable = true }
 ```
 
 Install:
@@ -58,7 +58,7 @@ The `JWTAuthMiddleware` validates Bearer tokens on every request and populates `
 ```python
 # src/main.py
 from fastapi import FastAPI
-from identity_sdk.middleware import JWTAuthMiddleware
+from sentinel_auth.middleware import JWTAuthMiddleware
 from src.config import settings
 
 PUBLIC_KEY = settings.public_key_path.read_text()
@@ -80,8 +80,8 @@ Use `get_current_user` to access the authenticated user's JWT claims:
 
 ```python
 from fastapi import Depends
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 @app.get("/me")
 async def whoami(user: AuthenticatedUser = Depends(get_current_user)):
@@ -101,7 +101,7 @@ The `AuthenticatedUser` dataclass gives you `user_id`, `email`, `name`, `workspa
 Use `get_workspace_id` to scope queries to the current workspace:
 
 ```python
-from identity_sdk.dependencies import get_workspace_id
+from sentinel_auth.dependencies import get_workspace_id
 
 @app.get("/notes")
 async def list_notes(workspace_id: uuid.UUID = Depends(get_workspace_id)):
@@ -115,7 +115,7 @@ This ensures users in workspace A never see notes from workspace B — even if t
 Use `require_role()` to restrict endpoints by workspace role level:
 
 ```python
-from identity_sdk.dependencies import require_role
+from sentinel_auth.dependencies import require_role
 
 @app.post("/notes", status_code=201)
 async def create_note(
@@ -139,7 +139,7 @@ The role hierarchy is: `viewer < editor < admin < owner`. A user with `admin` ro
 When creating a resource that needs entity-level permissions, register it with the identity service:
 
 ```python
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 # Initialize in app lifespan
 permissions = PermissionClient(
@@ -231,7 +231,7 @@ async def share_note(
 Register service-specific actions on startup using `RoleClient`:
 
 ```python
-from identity_sdk.roles import RoleClient
+from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
     base_url="http://localhost:9003",
@@ -248,7 +248,7 @@ await roles.register_actions([
 Then protect endpoints with `require_action()`:
 
 ```python
-from identity_sdk.dependencies import require_action
+from sentinel_auth.dependencies import require_action
 
 @app.get("/notes/export")
 async def export_notes(

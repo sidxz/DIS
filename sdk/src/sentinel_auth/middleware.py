@@ -13,7 +13,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.types import AuthenticatedUser
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
@@ -37,7 +37,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
     Example:
         ```python
         from pathlib import Path
-        from identity_sdk.middleware import JWTAuthMiddleware
+        from sentinel_auth.middleware import JWTAuthMiddleware
 
         public_key = Path("keys/public.pem").read_text()
 

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-The Daikon Identity Service is a centralized authentication and authorization platform that sits between your applications and external identity providers. It handles user lifecycle, workspace tenancy, group management, and a Zanzibar-style permission system -- all exposed through a REST API and a companion Python SDK.
+The Sentinel Auth is a centralized authentication and authorization platform that sits between your applications and external identity providers. It handles user lifecycle, workspace tenancy, group management, and a Zanzibar-style permission system -- all exposed through a REST API and a companion Python SDK.
 
 ```mermaid
 graph TB

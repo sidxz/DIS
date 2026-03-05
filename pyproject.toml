@@ -1,10 +1,10 @@
 [project]
-name = "daikon-identity-service"
+name = "daikon-sentinel"
 version = "0.1.0"
-description = "Daikon Identity — authentication, workspace management & permissions microservice"
+description = "Sentinel Auth — authentication, workspace management & permissions microservice"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["daikon-identity-sdk", "uvicorn[standard]>=0.34.0"]
+dependencies = ["sentinel-auth", "sentinel-auth-sdk", "uvicorn[standard]>=0.34.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -19,7 +19,8 @@ docs = [
 ]
 
 [tool.uv.sources]
-daikon-identity-sdk = { workspace = true }
+sentinel-auth = { workspace = true }
+sentinel-auth-sdk = { workspace = true }
 
 [tool.uv.workspace]
 members = ["service", "sdk"]

@@ -5,13 +5,13 @@
 Using [uv](https://docs.astral.sh/uv/) (recommended):
 
 ```bash
-uv add daikon-identity-sdk
+uv add sentinel-auth-sdk
 ```
 
 Using pip:
 
 ```bash
-pip install daikon-identity-sdk
+pip install sentinel-auth-sdk
 ```
 
 This installs the SDK and all its dependencies (`pyjwt[crypto]`, `httpx`, `cryptography`, `pydantic`, `starlette`, `fastapi`).
@@ -25,7 +25,7 @@ Add the SDK as a dependency in your service's `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "daikon-identity-sdk",
+    "sentinel-auth-sdk",
 ]
 ```
 
@@ -33,7 +33,7 @@ Then configure uv to resolve it from the local path by adding a `[tool.uv.source
 
 ```toml
 [tool.uv.sources]
-daikon-identity-sdk = { path = "../identity-service/sdk", editable = true }
+sentinel-auth-sdk = { path = "../identity-service/sdk", editable = true }
 ```
 
 Run `uv sync` to install:
@@ -42,17 +42,17 @@ Run `uv sync` to install:
 uv sync
 ```
 
-The SDK will be installed as an editable link. Any changes you make to the SDK code under `identity-service/sdk/src/identity_sdk/` will be picked up without reinstalling.
+The SDK will be installed as an editable link. Any changes you make to the SDK code under `identity-service/sdk/src/sentinel_auth/` will be picked up without reinstalling.
 
 ## Verify Installation
 
 Confirm the SDK is installed and importable:
 
 ```python
->>> from identity_sdk.types import AuthenticatedUser, WorkspaceContext
->>> from identity_sdk.middleware import JWTAuthMiddleware
->>> from identity_sdk.dependencies import get_current_user
->>> from identity_sdk.permissions import PermissionClient
+>>> from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
+>>> from sentinel_auth.middleware import JWTAuthMiddleware
+>>> from sentinel_auth.dependencies import get_current_user
+>>> from sentinel_auth.permissions import PermissionClient
 ```
 
 ## Public Key Setup

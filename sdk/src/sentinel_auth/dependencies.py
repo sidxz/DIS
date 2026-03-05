@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request
 
-from identity_sdk.types import AuthenticatedUser, WorkspaceContext
+from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
 
 if TYPE_CHECKING:
-    from identity_sdk.roles import RoleClient
+    from sentinel_auth.roles import RoleClient
 
 
 def get_current_user(request: Request) -> AuthenticatedUser:

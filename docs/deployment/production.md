@@ -1,6 +1,6 @@
 # Production Checklist
 
-Follow this checklist before deploying the Daikon Identity Service to a production environment. Each item addresses a specific security or reliability concern.
+Follow this checklist before deploying the Sentinel Auth to a production environment. Each item addresses a specific security or reliability concern.
 
 ## 1. Set a strong session secret
 

@@ -1,6 +1,6 @@
 # Contributing
 
-Welcome to the Daikon Identity Service contributor guide. This section covers everything you need to get started contributing to the project.
+Welcome to the Sentinel Auth contributor guide. This section covers everything you need to get started contributing to the project.
 
 ## Quick Links
 
@@ -17,7 +17,7 @@ Welcome to the Daikon Identity Service contributor guide. This section covers ev
 The project is structured as a [uv workspace](https://docs.astral.sh/uv/concepts/workspaces/) with three members:
 
 - **`service/`** -- The FastAPI microservice (the core of the project)
-- **`sdk/`** -- A pip-installable Python SDK (`daikon-identity-sdk`) for consuming services
+- **`sdk/`** -- A pip-installable Python SDK (`sentinel-auth-sdk`) for consuming services
 - **`admin/`** -- A React admin panel for managing users, workspaces, and permissions
 
 The fastest way to get running:

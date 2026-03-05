@@ -13,7 +13,7 @@ The RBAC system works alongside workspace roles and entity ACLs:
 ## Setup
 
 ```python
-from identity_sdk.roles import RoleClient
+from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
     base_url="http://identity-service:8000",
@@ -119,8 +119,8 @@ async def check_action(
 
 ```python
 from fastapi import Depends, HTTPException, Request
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/reports/export")

@@ -1,6 +1,6 @@
 # Getting Started
 
-This section walks you through setting up the Daikon Identity Service from a fresh clone to a running instance with OAuth login.
+This section walks you through setting up the Sentinel Auth from a fresh clone to a running instance with OAuth login.
 
 ## Prerequisites
 

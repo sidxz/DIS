@@ -1,6 +1,6 @@
 # Authentication
 
-The Daikon Identity Service does not manage local user credentials. Users always authenticate through external identity providers (IdPs) via OAuth2 or OpenID Connect. The service acts as an OAuth2 client, handling the redirect flow, extracting user information from the provider, and issuing its own JWT tokens.
+The Sentinel Auth does not manage local user credentials. Users always authenticate through external identity providers (IdPs) via OAuth2 or OpenID Connect. The service acts as an OAuth2 client, handling the redirect flow, extracting user information from the provider, and issuing its own JWT tokens.
 
 ## Login Flow
 

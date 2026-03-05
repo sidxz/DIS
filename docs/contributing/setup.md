@@ -1,6 +1,6 @@
 # Dev Setup
 
-This guide walks through setting up a local development environment for the Daikon Identity Service.
+This guide walks through setting up a local development environment for the Sentinel Auth.
 
 ## Prerequisites
 

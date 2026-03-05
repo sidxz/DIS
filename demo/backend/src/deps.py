@@ -2,15 +2,15 @@
 
 from fastapi import Request
 
-from identity_sdk.dependencies import (  # noqa: F401
+from sentinel_auth.dependencies import (  # noqa: F401
     get_current_user,
     get_workspace_context,
     get_workspace_id,
     require_role,
 )
-from identity_sdk.permissions import PermissionClient
-from identity_sdk.roles import RoleClient
-from identity_sdk.types import AuthenticatedUser, WorkspaceContext  # noqa: F401
+from sentinel_auth.permissions import PermissionClient
+from sentinel_auth.roles import RoleClient
+from sentinel_auth.types import AuthenticatedUser, WorkspaceContext  # noqa: F401
 
 
 def get_token(request: Request) -> str:

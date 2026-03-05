@@ -1,6 +1,6 @@
 # Concepts
 
-This section covers the core concepts and design decisions behind the Daikon Identity Service. Each page dives deep into a specific area of the system.
+This section covers the core concepts and design decisions behind the Sentinel Auth. Each page dives deep into a specific area of the system.
 
 ## Tutorial
 

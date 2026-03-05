@@ -1,6 +1,6 @@
 # Project Structure
 
-The Daikon Identity Service is organized as a uv workspace with multiple packages. Here is the full directory tree with annotations.
+The Sentinel Auth is organized as a uv workspace with multiple packages. Here is the full directory tree with annotations.
 
 ```
 identity-service/
@@ -41,13 +41,13 @@ identity-service/
 │   └── pyproject.toml             # Service-specific dependencies
 │
 ├── sdk/                           # Python SDK (pip-installable)
-│   ├── src/identity_sdk/
+│   ├── src/sentinel_auth/
 │   │   ├── __init__.py
 │   │   ├── types.py              # AuthenticatedUser, WorkspaceContext
 │   │   ├── middleware.py         # JWTAuthMiddleware (Starlette)
 │   │   ├── dependencies.py       # FastAPI deps (get_current_user, etc.)
 │   │   └── permissions.py        # PermissionClient (httpx async)
-│   └── pyproject.toml            # Published as daikon-identity-sdk
+│   └── pyproject.toml            # Published as sentinel-auth-sdk
 │
 ├── admin/                         # React admin panel
 │   ├── src/
@@ -97,7 +97,7 @@ Each member has its own `pyproject.toml` with independent dependencies. The root
 
 - **`service/`** depends on the full stack: FastAPI, SQLAlchemy, Authlib, Redis, etc.
 - **`sdk/`** is lightweight by design: only `httpx`, `pyjwt`, `cryptography`, and `starlette`.
-- The SDK is published to PyPI as `daikon-identity-sdk` and imported as `identity_sdk`.
+- The SDK is published to PyPI as `sentinel-auth-sdk` and imported as `sentinel_auth`.
 
 ## Key Files
 

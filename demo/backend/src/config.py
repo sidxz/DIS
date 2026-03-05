@@ -8,7 +8,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    identity_service_url: str = "http://localhost:9003"
+    sentinel_url: str = "http://localhost:9003"
     service_name: str = "team-notes"
     service_api_key: str = ""
     public_key_path: Path = Path("../../keys/public.pem")

@@ -12,7 +12,7 @@ The permission system works alongside workspace roles:
 ## Setup
 
 ```python
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 permissions = PermissionClient(
     base_url="http://identity-service:8000",
@@ -97,8 +97,8 @@ async def can(
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
-from identity_sdk.dependencies import get_current_user
-from identity_sdk.types import AuthenticatedUser
+from sentinel_auth.dependencies import get_current_user
+from sentinel_auth.types import AuthenticatedUser
 
 
 @router.get("/documents/{doc_id}")
@@ -149,7 +149,7 @@ async def check(
 **Example:**
 
 ```python
-from identity_sdk.permissions import PermissionCheck
+from sentinel_auth.permissions import PermissionCheck
 
 
 @router.post("/documents/batch-check")

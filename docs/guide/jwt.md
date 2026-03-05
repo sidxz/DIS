@@ -1,6 +1,6 @@
 # JWT Tokens
 
-The Daikon Identity Service issues JSON Web Tokens (JWTs) for authentication. Tokens are signed with RS256 (RSA + SHA-256) using a private key, and can be verified by any service holding the corresponding public key.
+The Sentinel Auth issues JSON Web Tokens (JWTs) for authentication. Tokens are signed with RS256 (RSA + SHA-256) using a private key, and can be verified by any service holding the corresponding public key.
 
 ## Token Types
 

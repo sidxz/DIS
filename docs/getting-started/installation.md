@@ -1,6 +1,6 @@
 # Installation
 
-This guide covers getting the Daikon Identity Service installed and its infrastructure running on your local machine.
+This guide covers getting the Sentinel Auth installed and its infrastructure running on your local machine.
 
 ## Quick Path
 
@@ -34,7 +34,7 @@ The project uses a **uv workspace** with two members (`service/` and `sdk/`), ma
 uv sync
 ```
 
-This creates a virtual environment and installs both the FastAPI service and the `daikon-identity-sdk` package in editable mode.
+This creates a virtual environment and installs both the FastAPI service and the `sentinel-auth-sdk` package in editable mode.
 
 ### 3. Generate RSA keys for JWT signing
 
@@ -88,7 +88,7 @@ No manual migration step is required. The service runs Alembic migrations **auto
 
 At this point you should have:
 
-- [x] Python dependencies installed (check with `uv run python -c "import identity_sdk"`)
+- [x] Python dependencies installed (check with `uv run python -c "import sentinel_auth"`)
 - [x] RSA key pair in `keys/`
 - [x] PostgreSQL and Redis running in Docker
 - [x] A `.env` file based on `.env.example`

@@ -1,3 +1,3 @@
 # Middleware
 
-::: identity_sdk.middleware
+::: sentinel_auth.middleware

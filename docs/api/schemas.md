@@ -2,7 +2,7 @@
 
 > **Tip:** For interactive API exploration, visit `/docs` (Swagger UI) when the service is running.
 
-This page consolidates all Pydantic request and response models used by the Daikon Identity Service API. Each schema is presented as a table with field details.
+This page consolidates all Pydantic request and response models used by the Sentinel Auth API. Each schema is presented as a table with field details.
 
 ---
 

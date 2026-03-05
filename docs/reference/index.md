@@ -1,8 +1,8 @@
 # SDK Reference
 
-This section contains API reference documentation for the `daikon-identity-sdk` Python package, auto-generated from source code docstrings using [mkdocstrings](https://mkdocstrings.github.io/).
+This section contains API reference documentation for the `sentinel-auth-sdk` Python package, auto-generated from source code docstrings using [mkdocstrings](https://mkdocstrings.github.io/).
 
-Each page corresponds to a module in the `identity_sdk` package:
+Each page corresponds to a module in the `sentinel_auth` package:
 
 | Module | Description |
 |--------|-------------|
@@ -16,16 +16,16 @@ Each page corresponds to a module in the `identity_sdk` package:
 Install the SDK in your service:
 
 ```bash
-uv add daikon-identity-sdk
+uv add sentinel-auth-sdk
 ```
 
 Then import what you need:
 
 ```python
-from identity_sdk.types import AuthenticatedUser
-from identity_sdk.middleware import JWTAuthMiddleware
-from identity_sdk.dependencies import get_current_user, get_workspace
-from identity_sdk.permissions import PermissionClient
+from sentinel_auth.types import AuthenticatedUser
+from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth.dependencies import get_current_user, get_workspace
+from sentinel_auth.permissions import PermissionClient
 ```
 
 !!! note "Docstring format"

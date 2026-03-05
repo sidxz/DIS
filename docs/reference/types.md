@@ -1,3 +1,3 @@
 # Types
 
-::: identity_sdk.types
+::: sentinel_auth.types

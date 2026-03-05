@@ -27,8 +27,8 @@ class AuthenticatedUser:
 
     Example:
         ```python
-        from identity_sdk.dependencies import get_current_user
-        from identity_sdk.types import AuthenticatedUser
+        from sentinel_auth.dependencies import get_current_user
+        from sentinel_auth.types import AuthenticatedUser
 
         @router.get("/items")
         async def list_items(user: AuthenticatedUser = Depends(get_current_user)):

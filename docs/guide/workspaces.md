@@ -1,6 +1,6 @@
 # Workspaces
 
-Workspaces are the tenant isolation boundary in the Daikon Identity Service. Every user, group, permission, and resource is scoped to a workspace. A user can belong to multiple workspaces, but their JWT token always reflects a single active workspace context.
+Workspaces are the tenant isolation boundary in the Sentinel Auth. Every user, group, permission, and resource is scoped to a workspace. A user can belong to multiple workspaces, but their JWT token always reflects a single active workspace context.
 
 ## What is a Workspace?
 

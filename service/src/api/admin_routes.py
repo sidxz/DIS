@@ -152,7 +152,6 @@ async def system_health(
 
 @router.get("/system/settings", response_model=SystemSettingsResponse)
 async def system_settings():
-
     # OAuth providers
     providers = [
         {"name": "google", "configured": bool(settings.google_client_id)},

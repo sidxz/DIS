@@ -1,6 +1,6 @@
 # Admin Panel
 
-The Daikon Identity Service includes an administrative panel for platform operators to manage users, workspaces, groups, permissions, and monitor system activity. The admin panel runs as a separate React application and communicates with the Identity Service API through dedicated admin endpoints.
+The Sentinel Auth includes an administrative panel for platform operators to manage users, workspaces, groups, permissions, and monitor system activity. The admin panel runs as a separate React application and communicates with the Identity Service API through dedicated admin endpoints.
 
 ## Overview
 

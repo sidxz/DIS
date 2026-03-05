@@ -23,9 +23,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
-      <aside className="w-56 shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
-        <div className="h-14 flex items-center px-4 border-b border-zinc-800">
-          <span className="text-sm font-semibold tracking-wide text-zinc-300">DAIKON IDENTITY</span>
+      <aside className="w-56 shrink-0 flex flex-col" style={{ backgroundColor: "#f43737" }}>
+        <div className="h-14 flex items-center gap-2.5 px-4 border-b border-red-600">
+          <img src="/logo.png" alt="Sentinel Auth" className="h-8 w-auto shrink-0" />
+          <span className="text-sm font-bold tracking-wider text-white uppercase whitespace-nowrap">Sentinel Auth</span>
         </div>
         <nav className="flex-1 px-2 py-3 space-y-0.5">
           {NAV.map(({ to, label, icon }) => (
@@ -36,8 +37,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
               className={({ isActive }) =>
                 `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
                   isActive
-                    ? "bg-zinc-800 text-white"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+                    ? "bg-red-700 text-white"
+                    : "text-red-100 hover:text-white hover:bg-red-600"
                 }`
               }
             >
@@ -48,15 +49,15 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div className="px-4 py-3 border-t border-zinc-800">
+        <div className="px-4 py-3 border-t border-red-600">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
-              <p className="truncate text-sm text-zinc-300">{admin.name}</p>
-              <p className="truncate text-xs text-zinc-500">{admin.email}</p>
+              <p className="truncate text-sm text-white">{admin.name}</p>
+              <p className="truncate text-xs text-red-200">{admin.email}</p>
             </div>
             <button
               onClick={handleLogout}
-              className="shrink-0 rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+              className="shrink-0 rounded p-1 text-red-200 hover:bg-red-600 hover:text-white"
               title="Sign out"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

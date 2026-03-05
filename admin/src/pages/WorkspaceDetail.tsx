@@ -28,7 +28,6 @@ import {
   updateRole,
   updateWorkspace,
 } from "../api/client";
-import { RoleBadge } from "../components/Badge";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Modal } from "../components/Modal";
 

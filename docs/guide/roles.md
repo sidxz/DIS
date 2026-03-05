@@ -1,6 +1,6 @@
 # Custom Roles (RBAC)
 
-The Daikon Identity Service implements NIST Core RBAC (Level 1) as a third authorization layer between workspace roles and entity ACLs. Custom roles allow services to define application-specific actions (like "export reports" or "manage templates") and assign them to users through named roles within a workspace.
+The Sentinel Auth implements NIST Core RBAC (Level 1) as a third authorization layer between workspace roles and entity ACLs. Custom roles allow services to define application-specific actions (like "export reports" or "manage templates") and assign them to users through named roles within a workspace.
 
 ## Three-Tier Authorization Model
 
@@ -105,7 +105,7 @@ POST /admin/roles/{role_id}/members/{user_id}
 Using the SDK:
 
 ```python
-from identity_sdk.roles import RoleClient
+from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
     base_url="http://identity-service:8000",
@@ -124,7 +124,7 @@ actions = await roles.get_user_actions(user_token, workspace_id)
 Or using the `require_action` dependency:
 
 ```python
-from identity_sdk.dependencies import require_action
+from sentinel_auth.dependencies import require_action
 
 @router.get("/reports/export")
 async def export_report(

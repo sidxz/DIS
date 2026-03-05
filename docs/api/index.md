@@ -2,7 +2,7 @@
 
 > **Tip:** For interactive API exploration, visit `/docs` (Swagger UI) when the service is running.
 
-This is the complete API reference for the Daikon Identity Service. All endpoints are documented with their authentication requirements, request/response schemas, and usage examples.
+This is the complete API reference for the Sentinel Auth. All endpoints are documented with their authentication requirements, request/response schemas, and usage examples.
 
 ## Base URL
 

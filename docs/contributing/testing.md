@@ -1,6 +1,6 @@
 # Testing
 
-This guide covers the testing approach for the Daikon Identity Service, including how to run tests, write new ones, and work with fixtures.
+This guide covers the testing approach for the Sentinel Auth, including how to run tests, write new ones, and work with fixtures.
 
 ## Running Tests
 
