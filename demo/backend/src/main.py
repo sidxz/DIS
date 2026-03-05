@@ -64,6 +64,7 @@ app.add_middleware(
     JWTAuthMiddleware,
     public_key=PUBLIC_KEY,
     exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    allowed_workspaces=set(settings.allowed_workspaces) or None,
 )
 
 # Mount routes

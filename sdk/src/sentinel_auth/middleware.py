@@ -33,6 +33,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         algorithm: JWT signing algorithm. Defaults to ``"RS256"``.
         exclude_paths: List of path prefixes to skip authentication for.
             Defaults to ``["/health", "/docs", "/openapi.json"]``.
+        allowed_workspaces: Optional set of workspace IDs (as strings) that
+            are permitted to access this service. ``None`` (default) allows
+            all workspaces. Returns 403 if the JWT's workspace is not in the set.
 
     Example:
         ```python
@@ -55,11 +58,13 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         public_key: str,
         algorithm: str = "RS256",
         exclude_paths: list[str] | None = None,
+        allowed_workspaces: set[str] | None = None,
     ):
         super().__init__(app)
         self.public_key = public_key
         self.algorithm = algorithm
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
+        self.allowed_workspaces = allowed_workspaces
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths
@@ -80,6 +85,12 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             return JSONResponse(status_code=401, content={"detail": "Token has expired"})
         except jwt.InvalidTokenError as e:
             return JSONResponse(status_code=401, content={"detail": f"Invalid token: {e}"})
+
+        if self.allowed_workspaces is not None and payload["wid"] not in self.allowed_workspaces:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Workspace not permitted for this service"},
+            )
 
         request.state.user = AuthenticatedUser(
             user_id=uuid.UUID(payload["sub"]),

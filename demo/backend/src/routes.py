@@ -11,7 +11,7 @@ from sentinel_auth.types import AuthenticatedUser
 from pydantic import BaseModel
 
 from src.config import settings
-from src.deps import get_current_user, get_permissions, get_roles, get_token, get_workspace_id
+from src.deps import get_current_user, get_permissions, get_roles, get_token, get_workspace_id, require_role
 from src.models import notes
 
 # ---------------------------------------------------------------------------

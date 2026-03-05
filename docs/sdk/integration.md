@@ -69,6 +69,19 @@ app.add_middleware(
 
 Every authenticated request now has an `AuthenticatedUser` on `request.state.user`.
 
+To restrict access to specific workspaces, add `allowed_workspaces`:
+
+```python
+app.add_middleware(
+    JWTAuthMiddleware,
+    public_key=PUBLIC_KEY,
+    exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    allowed_workspaces={"workspace-uuid-1", "workspace-uuid-2"},  # None = all
+)
+```
+
+See [Middleware — Restricting by Workspace](middleware.md#restricting-by-workspace) for details.
+
 ## Step 3: Create Auth Dependencies
 
 Set up reusable dependencies for your routes. Create an `auth.py` module (or add to an existing dependencies module):

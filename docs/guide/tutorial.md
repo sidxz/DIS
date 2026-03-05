@@ -74,6 +74,20 @@ app.add_middleware(
 
 After this, every request (except excluded paths) must include a valid `Authorization: Bearer <token>` header.
 
+!!! tip "Restricting to specific workspaces"
+    If your app should only be accessible to members of certain workspaces, add the `allowed_workspaces` parameter:
+
+    ```python
+    app.add_middleware(
+        JWTAuthMiddleware,
+        public_key=PUBLIC_KEY,
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+        allowed_workspaces={"your-workspace-uuid"},
+    )
+    ```
+
+    Users from other workspaces will receive a `403 Forbidden` response. See [Middleware — Restricting by Workspace](../sdk/middleware.md#restricting-by-workspace) for details.
+
 ## Step 3: First Protected Endpoint
 
 Use `get_current_user` to access the authenticated user's JWT claims:

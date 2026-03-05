@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     service_name: str = "team-notes"
     service_api_key: str = ""
     public_key_path: Path = Path("../../keys/public.pem")
+    allowed_workspaces: list[str] = []
     host: str = "0.0.0.0"
     port: int = 9100
     frontend_url: str = "http://localhost:9101"

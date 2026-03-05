@@ -58,66 +58,73 @@ async def callback(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    configured = get_configured_providers()
-    if provider not in configured:
-        raise HTTPException(
-            status_code=400, detail=f"Provider '{provider}' is not configured"
+    try:
+        configured = get_configured_providers()
+        if provider not in configured:
+            raise HTTPException(
+                status_code=400, detail=f"Provider '{provider}' is not configured"
+            )
+
+        client = oauth.create_client(provider)
+        token = await client.authorize_access_token(request)
+
+        # Extract user info based on provider
+        if provider == "github":
+            resp = await client.get("user", token=token)
+            profile = resp.json()
+            # GitHub may not return email in profile, fetch from emails endpoint
+            if not profile.get("email"):
+                resp = await client.get("user/emails", token=token)
+                emails = resp.json()
+                primary = next((e for e in emails if e.get("primary")), emails[0])
+                profile["email"] = primary["email"]
+            provider_user_id = str(profile["id"])
+            email = profile["email"]
+            name = profile.get("name") or profile.get("login", "")
+            avatar_url = profile.get("avatar_url")
+        else:
+            # OIDC providers (Google, EntraID) — parse ID token
+            userinfo = token.get("userinfo", {})
+            provider_user_id = userinfo.get("sub", "")
+            email = userinfo.get("email", "")
+            name = userinfo.get("name", "")
+            avatar_url = userinfo.get("picture")
+            profile = dict(userinfo)
+
+        user = await auth_service.find_or_create_user(
+            db=db,
+            provider=provider,
+            provider_user_id=provider_user_id,
+            email=email,
+            name=name,
+            avatar_url=avatar_url,
+            provider_data=profile,
         )
 
-    client = oauth.create_client(provider)
-    token = await client.authorize_access_token(request)
+        await activity_service.log_activity(
+            db,
+            action="user_login",
+            target_type="user",
+            target_id=user.id,
+            actor_id=user.id,
+            detail={
+                "provider": provider,
+                "ip": request.client.host if request.client else None,
+            },
+        )
+        await db.commit()
 
-    # Extract user info based on provider
-    if provider == "github":
-        resp = await client.get("user", token=token)
-        profile = resp.json()
-        # GitHub may not return email in profile, fetch from emails endpoint
-        if not profile.get("email"):
-            resp = await client.get("user/emails", token=token)
-            emails = resp.json()
-            primary = next((e for e in emails if e.get("primary")), emails[0])
-            profile["email"] = primary["email"]
-        provider_user_id = str(profile["id"])
-        email = profile["email"]
-        name = profile.get("name") or profile.get("login", "")
-        avatar_url = profile.get("avatar_url")
-    else:
-        # OIDC providers (Google, EntraID) — parse ID token
-        userinfo = token.get("userinfo", {})
-        provider_user_id = userinfo.get("sub", "")
-        email = userinfo.get("email", "")
-        name = userinfo.get("name", "")
-        avatar_url = userinfo.get("picture")
-        profile = dict(userinfo)
-
-    user = await auth_service.find_or_create_user(
-        db=db,
-        provider=provider,
-        provider_user_id=provider_user_id,
-        email=email,
-        name=name,
-        avatar_url=avatar_url,
-        provider_data=profile,
-    )
-
-    await activity_service.log_activity(
-        db,
-        action="user_login",
-        target_type="user",
-        target_id=user.id,
-        actor_id=user.id,
-        detail={
-            "provider": provider,
-            "ip": request.client.host if request.client else None,
-        },
-    )
-    await db.commit()
-
-    # TODO: redirect to frontend with auth code / set cookie
-    # For now, redirect to frontend with user ID for workspace selection
-    return RedirectResponse(
-        url=f"{settings.frontend_url}/auth/callback?user_id={user.id}"
-    )
+        # Redirect to frontend with user ID for workspace selection
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/auth/callback?user_id={user.id}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("auth callback error", error=str(e), exc_info=True)
+        return JSONResponse(
+            status_code=500, content={"detail": f"Authentication failed: {e}"}
+        )
 
 
 @router.get("/workspaces", response_model=list[WorkspaceOptionResponse])

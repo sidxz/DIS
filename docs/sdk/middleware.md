@@ -28,6 +28,7 @@ app.add_middleware(
 | `public_key` | `str` | *required* | RSA public key in PEM format. Used to verify RS256 JWT signatures. Obtain this from the identity service's `keys/public.pem`. |
 | `algorithm` | `str` | `"RS256"` | JWT signing algorithm. Must match the identity service's signing configuration. |
 | `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | List of path prefixes that bypass authentication. Any request whose path starts with one of these strings is passed through without token validation. |
+| `allowed_workspaces` | `set[str] \| None` | `None` | Optional set of workspace IDs permitted to access this service. `None` allows all workspaces. If set, requests with a workspace ID not in the set receive a 403 response. |
 
 ## How It Works
 
@@ -121,6 +122,17 @@ Returned when:
 - The token is malformed or cannot be decoded
 - Required claims are missing
 
+### Workspace Not Permitted
+
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{"detail": "Workspace not permitted for this service"}
+```
+
+Returned when `allowed_workspaces` is configured and the JWT's workspace ID is not in the permitted set. The token itself is valid, but the service does not serve this workspace.
+
 ## Middleware Order
 
 When combining `JWTAuthMiddleware` with other middleware, add it **last** (so it runs first in the request pipeline). FastAPI/Starlette middleware is executed in reverse order of addition:
@@ -172,6 +184,39 @@ app.add_middleware(
 ```
 
 Path matching uses `str.startswith()`, so `"/public/"` matches `/public/logo.png`, `/public/styles.css`, etc.
+
+## Restricting by Workspace
+
+If your service should only be accessible to members of specific workspaces, pass the `allowed_workspaces` parameter:
+
+```python
+app.add_middleware(
+    JWTAuthMiddleware,
+    public_key=public_key,
+    allowed_workspaces={"a1b2c3d4-...", "e5f6g7h8-..."},
+)
+```
+
+When set, any request with a valid JWT but a workspace ID not in the set receives a `403 Forbidden` response:
+
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+
+{"detail": "Workspace not permitted for this service"}
+```
+
+Pass `None` (the default) to allow all workspaces. This is useful for multi-tenant deployments where each service instance is locked to a specific tenant:
+
+```python
+# Read from environment (comma-separated UUIDs)
+allowed = settings.allowed_workspaces  # e.g. ["uuid1", "uuid2"]
+app.add_middleware(
+    JWTAuthMiddleware,
+    public_key=public_key,
+    allowed_workspaces=set(allowed) or None,
+)
+```
 
 ## Accessing the User in Route Handlers
 
