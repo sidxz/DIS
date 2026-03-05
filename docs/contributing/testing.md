@@ -175,6 +175,61 @@ def service_headers():
 
 Ensure `SERVICE_API_KEYS` includes `test-service-key` in your test configuration.
 
+## Security / Penetration Testing
+
+The `pentest/` directory contains a standalone security testing suite that runs against a live instance of the service. It combines industry tools (OWASP ZAP, Nuclei, Nikto, jwt_tool) with ~110 custom tests.
+
+### Setup
+
+```bash
+# Install external tools
+make pentest-setup
+```
+
+### Running
+
+```bash
+# Full suite (external tools + custom scripts)
+make pentest
+
+# Custom scripts only (faster, no tool dependencies)
+make pentest-custom
+
+# Individual tool
+cd pentest && python run_all.py --zap
+cd pentest && python run_all.py --nuclei
+cd pentest && python run_all.py --nikto
+cd pentest && python run_all.py --jwt
+```
+
+!!! note
+    The custom suite pauses 62 seconds between test modules to respect the global rate limit (30 req/min). A full custom run takes ~10 minutes.
+
+### Adding Custom Tests
+
+Custom scripts live in `pentest/custom/`. Each script follows the pattern:
+
+```python
+from config import BASE_URL, forge_access_token, print_result, print_section
+
+def test_my_security_check():
+    r = httpx.get(f"{BASE_URL}/some/endpoint", ...)
+    passed = r.status_code == 401
+    print_result("My check description", passed, f"Status: {r.status_code}")
+    return passed
+
+def main():
+    print_section("MY TEST SUITE")
+    test_my_security_check()
+
+if __name__ == "__main__":
+    main()
+```
+
+Add the module to `SUITES` in `pentest/custom/runner.py` to include it in the full run. Reports are written to `pentest/reports/`.
+
+---
+
 ## Best Practices
 
 - **Use `pytest.mark.asyncio`** on all async test functions.

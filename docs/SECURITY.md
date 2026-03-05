@@ -17,6 +17,9 @@ The service applies middleware in a specific order (outermost first):
 Request
   |
   v
+GlobalRateLimitMiddleware    -- 30 req/min per IP (all endpoints)
+  |
+  v
 SecurityHeadersMiddleware    -- security response headers
   |
   v
@@ -46,6 +49,12 @@ Every response includes the following headers, set by `SecurityHeadersMiddleware
 | `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage |
 | `X-XSS-Protection` | `0` | Disables legacy XSS filter (modern CSP preferred) |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Restricts browser APIs |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` | Blocks all resource loading and framing |
+| `Cross-Origin-Embedder-Policy` | `require-corp` | Prevents cross-origin resource leaks |
+| `Cross-Origin-Opener-Policy` | `same-origin` | Isolates browsing context |
+| `Cross-Origin-Resource-Policy` | `same-origin` | Restricts resource sharing to same origin |
+| `X-Permitted-Cross-Domain-Policies` | `none` | Blocks Flash/PDF cross-domain access |
+| `Server` | `daikon` | Masks underlying server technology |
 
 #### HSTS
 
@@ -148,11 +157,13 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 | Claim | Type | Description |
 |-------|------|-------------|
 | `sub` | UUID | User ID |
+| `jti` | UUID | Unique token identifier (for revocation) |
 | `email` | string | User email |
 | `name` | string | User display name |
 | `admin` | boolean | Always `true` |
 | `type` | string | `"admin_access"` |
-| `exp` | timestamp | Expiration (8 hours) |
+| `iat` | timestamp | Issued at |
+| `exp` | timestamp | Expiration (default: 1 hour) |
 
 **Token lifetimes:**
 
@@ -160,7 +171,7 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 |-------|-----------------|------------------|
 | Access token | 15 minutes | `ACCESS_TOKEN_EXPIRE_MINUTES` |
 | Refresh token | 7 days | `REFRESH_TOKEN_EXPIRE_DAYS` |
-| Admin token | 8 hours | Hardcoded |
+| Admin token | 1 hour | `ADMIN_TOKEN_EXPIRE_MINUTES` |
 
 ---
 
@@ -204,6 +215,22 @@ Access tokens can be revoked before expiration (e.g., on logout) using a Redis d
 | `bl:{jti}` | `"1"` | Remaining seconds until token expiration |
 
 This approach keeps the denylist small -- entries automatically expire when the token would have expired anyway.
+
+### Admin Token Revocation
+
+Admin tokens follow the same denylist pattern as access tokens. When an admin logs out via `POST /auth/admin/logout`:
+
+1. The endpoint requires a valid admin cookie (`Depends(require_admin)`)
+2. The `jti` from the admin token is added to the Redis denylist
+3. The `admin_token` cookie is deleted from the response
+4. On subsequent requests, `require_admin` checks the denylist before granting access
+
+### Logout Completeness
+
+User logout (`POST /auth/logout`) performs two actions:
+
+1. **Blacklists the access token** — adds `jti` to the Redis denylist
+2. **Revokes all refresh token families** — calls `revoke_all_user_tokens(user_id)` to invalidate every refresh token the user has, preventing an attacker with a captured refresh token from obtaining new access tokens after the user logs out
 
 ---
 
@@ -268,19 +295,26 @@ When `COOKIE_SECURE=true`, the `Secure` flag ensures the cookie is only sent ove
 
 ## Rate Limiting
 
-Rate limiting is enforced per IP address using [slowapi](https://github.com/laurentS/slowapi) (built on top of `limits`). When a client exceeds the limit, the service responds with `429 Too Many Requests` and a `Retry-After` header.
+Rate limiting uses two layers:
+
+1. **Global rate limit** — `GlobalRateLimitMiddleware` enforces **30 requests/minute per IP** across all endpoints (except `/health`). This is a simple in-memory sliding window that catches broad abuse regardless of endpoint.
+
+2. **Per-endpoint limits** — [slowapi](https://github.com/laurentS/slowapi) applies stricter limits on sensitive endpoints. These fire before the global limit.
+
+When a client exceeds either limit, the service responds with `429 Too Many Requests` and a `Retry-After` header.
 
 ### Endpoint Limits
 
 | Endpoint | Limit | Rationale |
 |----------|-------|-----------|
+| All endpoints | 30/minute (global) | Baseline abuse prevention |
 | `GET /auth/login/{provider}` | 10/minute | Prevents OAuth redirect abuse |
 | `GET /auth/callback/{provider}` | 10/minute | Limits callback processing |
 | `POST /auth/refresh` | 10/minute | Prevents refresh token brute-force |
 | `GET /auth/admin/login/{provider}` | 5/minute | Stricter limit on admin login |
 | `GET /auth/admin/callback/{provider}` | 5/minute | Stricter limit on admin callback |
 
-Rate limit state is keyed by the client's remote IP address (`get_remote_address`). If the service is behind a reverse proxy, ensure `X-Forwarded-For` is configured correctly so the real client IP is used.
+Rate limit state is keyed by the client's remote IP address. If the service is behind a reverse proxy, ensure `X-Forwarded-For` is configured correctly so the real client IP is used.
 
 ---
 
@@ -336,7 +370,64 @@ All security-related environment variables:
 | `JWT_PUBLIC_KEY_PATH` | `keys/public.pem` | Path to RS256 public key for verifying tokens |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime in days |
+| `ADMIN_TOKEN_EXPIRE_MINUTES` | `60` | Admin token lifetime in minutes |
+| `DEBUG` | `true` | Set `false` in production to disable `/docs`, `/redoc`, `/openapi.json` |
 | `ADMIN_EMAILS` | (empty) | Comma-separated emails auto-promoted to admin on login |
+
+---
+
+## Penetration Testing
+
+The `pentest/` directory contains a comprehensive security testing suite combining industry-standard tools with custom scripts.
+
+### Running
+
+```bash
+# Install tools (one-time)
+make pentest-setup
+
+# Run everything
+make pentest
+
+# Custom scripts only (no external tools)
+make pentest-custom
+
+# Single tool
+cd pentest && python run_all.py --nuclei
+```
+
+### External Tools
+
+| Tool | What It Tests |
+|------|---------------|
+| **OWASP ZAP** | API scanning via OpenAPI spec — injection, auth bypass, misconfigurations |
+| **Nuclei** | Template-based vulnerability and misconfiguration detection |
+| **Nikto** | Web server misconfiguration, default files, header issues |
+| **jwt_tool** | JWT-specific attacks — algorithm confusion, `none` bypass, claim injection |
+
+### Custom Scripts
+
+Ten test suites covering ~110 individual tests:
+
+| Suite | Coverage |
+|-------|----------|
+| JWT Attacks | Algorithm confusion, token forgery, claim tampering, JWK/KID injection |
+| Admin Bypass | Cookie theft/replay, privilege escalation, token revocation |
+| IDOR & AuthZ | Cross-workspace access, resource ID enumeration, role bypass |
+| Service Key | Dev-mode bypass, key brute-force, missing enforcement |
+| Rate Limiting | Header spoofing, endpoint flooding, evasion techniques |
+| Injection & XSS | SQL injection, stored XSS, CSV injection, path traversal |
+| Session & OAuth | Session fixation, state tampering, CSRF, redirect manipulation |
+| Info Disclosure | OpenAPI exposure, error verbosity, header leakage |
+| Token Lifecycle | Refresh rotation abuse, reuse detection, logout bypass |
+| Attack Chains | End-to-end scenarios chaining multiple vulnerabilities |
+
+### Reports
+
+All output is saved to `pentest/reports/`:
+
+- `summary.json` — combined results from all tools and custom scripts
+- `zap_report.json`, `nuclei_findings.jsonl`, `nikto_report.json`, `jwt_tool_results.txt`
 
 ---
 
@@ -351,6 +442,7 @@ Before deploying to production, verify the following:
 - [ ] `CORS_ORIGINS` lists only your frontend origin(s)
 - [ ] RS256 key pair is generated and `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` point to the correct files
 - [ ] The private key file has restrictive permissions (`chmod 600`)
+- [ ] `DEBUG=false` to disable OpenAPI docs (`/docs`, `/redoc`, `/openapi.json`)
 - [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
 - [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
 - [ ] Redis is password-protected and not exposed to the public internet
