@@ -1,0 +1,81 @@
+"""Refresh token rotation and access token revocation via Redis."""
+
+import uuid
+from datetime import UTC, datetime
+
+import redis.asyncio as redis
+
+from src.config import settings
+
+_redis: redis.Redis | None = None
+
+# Key prefixes
+_REFRESH_PREFIX = "rt:"       # rt:{jti} → JSON {user_id, family_id}
+_FAMILY_PREFIX = "rtf:"       # rtf:{family_id} → set of jtis
+_BLACKLIST_PREFIX = "bl:"     # bl:{jti} → "1"
+
+
+async def get_redis() -> redis.Redis:
+    global _redis
+    if _redis is None:
+        _redis = redis.from_url(settings.redis_url, decode_responses=True)
+    return _redis
+
+
+async def store_refresh_token(
+    jti: str,
+    user_id: uuid.UUID,
+    family_id: str,
+) -> None:
+    """Store a refresh token with its family for rotation tracking."""
+    r = await get_redis()
+    ttl = settings.refresh_token_expire_days * 86400
+    pipe = r.pipeline()
+    pipe.set(f"{_REFRESH_PREFIX}{jti}", f"{user_id}:{family_id}", ex=ttl)
+    pipe.sadd(f"{_FAMILY_PREFIX}{family_id}", jti)
+    pipe.expire(f"{_FAMILY_PREFIX}{family_id}", ttl)
+    await pipe.execute()
+
+
+async def consume_refresh_token(jti: str) -> tuple[uuid.UUID, str] | None:
+    """Consume a refresh token (one-time use).
+
+    Returns (user_id, family_id) if valid, None if already consumed/expired.
+    """
+    r = await get_redis()
+    val = await r.getdel(f"{_REFRESH_PREFIX}{jti}")
+    if not val:
+        return None
+    user_id_str, family_id = val.split(":", 1)
+    return uuid.UUID(user_id_str), family_id
+
+
+async def revoke_token_family(family_id: str) -> int:
+    """Revoke all refresh tokens in a family (theft detection).
+
+    Returns the number of tokens revoked.
+    """
+    r = await get_redis()
+    jtis = await r.smembers(f"{_FAMILY_PREFIX}{family_id}")
+    if not jtis:
+        return 0
+    pipe = r.pipeline()
+    for jti in jtis:
+        pipe.delete(f"{_REFRESH_PREFIX}{jti}")
+    pipe.delete(f"{_FAMILY_PREFIX}{family_id}")
+    results = await pipe.execute()
+    return sum(1 for x in results[:-1] if x)
+
+
+async def blacklist_access_token(jti: str, exp: int) -> None:
+    """Add an access token's jti to the denylist until it expires."""
+    r = await get_redis()
+    remaining = exp - int(datetime.now(UTC).timestamp())
+    if remaining > 0:
+        await r.set(f"{_BLACKLIST_PREFIX}{jti}", "1", ex=remaining)
+
+
+async def is_access_token_blacklisted(jti: str) -> bool:
+    """Check if an access token has been revoked."""
+    r = await get_redis()
+    return await r.exists(f"{_BLACKLIST_PREFIX}{jti}") > 0

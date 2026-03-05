@@ -39,6 +39,7 @@ def create_access_token(
     now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
+        "jti": str(uuid.uuid4()),
         "email": email,
         "name": name,
         "wid": str(workspace_id),

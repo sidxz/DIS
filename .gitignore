@@ -12,3 +12,6 @@ wheels/
 # Secrets
 keys/
 .env
+
+# MkDocs build output
+site/

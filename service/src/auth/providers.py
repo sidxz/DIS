@@ -12,9 +12,11 @@ if settings.google_client_id:
         client_secret=settings.google_client_secret,
         server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
         client_kwargs={"scope": "openid email profile"},
+        code_challenge_method="S256",
     )
 
 # GitHub (OAuth2 — not full OIDC, uses userinfo endpoint)
+# Note: GitHub does not support PKCE as of 2025
 if settings.github_client_id:
     oauth.register(
         name="github",
@@ -37,6 +39,7 @@ if settings.entra_client_id and settings.entra_tenant_id:
             "/v2.0/.well-known/openid-configuration"
         ),
         client_kwargs={"scope": "openid email profile"},
+        code_challenge_method="S256",
     )
 
 

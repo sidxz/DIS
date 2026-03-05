@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import CurrentUser, get_current_user
 from src.database import get_db
 from src.schemas.workspace import (
     InviteMemberRequest,
@@ -17,36 +18,46 @@ from src.services import workspace_service
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
 
-# TODO: replace with JWT-based dependency
-async def _get_current_user_id() -> uuid.UUID:
-    raise HTTPException(status_code=401, detail="Not authenticated")
+def _require_workspace_match(user: CurrentUser, workspace_id: uuid.UUID) -> None:
+    """Verify JWT workspace matches path workspace."""
+    if user.workspace_id != workspace_id:
+        raise HTTPException(status_code=403, detail="Not a member of this workspace")
+
+
+def _require_role(user: CurrentUser, minimum: str) -> None:
+    """Enforce minimum workspace role from JWT."""
+    hierarchy = {"viewer": 0, "editor": 1, "admin": 2, "owner": 3}
+    if hierarchy.get(user.workspace_role, -1) < hierarchy[minimum]:
+        raise HTTPException(status_code=403, detail="Insufficient role")
 
 
 @router.post("", response_model=WorkspaceResponse, status_code=201)
 async def create_workspace(
     body: WorkspaceCreateRequest,
-    user_id: uuid.UUID = Depends(_get_current_user_id),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     workspace = await workspace_service.create_workspace(
-        db, name=body.name, slug=body.slug, created_by=user_id, description=body.description
+        db, name=body.name, slug=body.slug, created_by=user.user_id, description=body.description
     )
     return workspace
 
 
 @router.get("", response_model=list[WorkspaceResponse])
 async def list_workspaces(
-    user_id: uuid.UUID = Depends(_get_current_user_id),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await workspace_service.list_user_workspaces(db, user_id)
+    return await workspace_service.list_user_workspaces(db, user.user_id)
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceResponse)
 async def get_workspace(
     workspace_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_workspace_match(user, workspace_id)
     workspace = await workspace_service.get_workspace(db, workspace_id)
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -57,18 +68,22 @@ async def get_workspace(
 async def update_workspace(
     workspace_id: uuid.UUID,
     body: WorkspaceUpdateRequest,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: check admin/owner role
+    _require_workspace_match(user, workspace_id)
+    _require_role(user, "admin")
     return await workspace_service.update_workspace(db, workspace_id, name=body.name, description=body.description)
 
 
 @router.delete("/{workspace_id}", status_code=204)
 async def delete_workspace(
     workspace_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: check owner role
+    _require_workspace_match(user, workspace_id)
+    _require_role(user, "owner")
     await workspace_service.delete_workspace(db, workspace_id)
 
 
@@ -78,8 +93,10 @@ async def delete_workspace(
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])
 async def list_members(
     workspace_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    _require_workspace_match(user, workspace_id)
     return await workspace_service.list_members(db, workspace_id)
 
 
@@ -87,9 +104,11 @@ async def list_members(
 async def invite_member(
     workspace_id: uuid.UUID,
     body: InviteMemberRequest,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: check admin/owner role
+    _require_workspace_match(user, workspace_id)
+    _require_role(user, "admin")
     membership = await workspace_service.invite_member(db, workspace_id, email=body.email, role=body.role)
     return membership
 
@@ -99,9 +118,11 @@ async def update_member_role(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     body: UpdateMemberRoleRequest,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: check admin/owner role
+    _require_workspace_match(user, workspace_id)
+    _require_role(user, "admin")
     return await workspace_service.update_member_role(db, workspace_id, user_id, role=body.role)
 
 
@@ -109,7 +130,9 @@ async def update_member_role(
 async def remove_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: check admin/owner role
+    _require_workspace_match(user, workspace_id)
+    _require_role(user, "admin")
     await workspace_service.remove_member(db, workspace_id, user_id)

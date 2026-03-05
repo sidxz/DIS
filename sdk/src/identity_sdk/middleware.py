@@ -1,3 +1,10 @@
+"""Starlette/FastAPI middleware for JWT access token validation.
+
+Add this middleware to your FastAPI app to automatically validate
+JWT tokens on incoming requests and populate ``request.state.user``
+with an ``AuthenticatedUser`` instance.
+"""
+
 import uuid
 
 import jwt
@@ -9,7 +16,37 @@ from identity_sdk.types import AuthenticatedUser
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
-    """Validates JWT access tokens and sets request.state.user."""
+    """Validates JWT access tokens and sets ``request.state.user``.
+
+    For each incoming request (except excluded paths), this middleware:
+
+    1. Extracts the ``Authorization: Bearer <token>`` header
+    2. Decodes and validates the JWT using the provided public key
+    3. Sets ``request.state.user`` to an ``AuthenticatedUser`` instance
+    4. Returns 401 if the token is missing, expired, or invalid
+
+    Args:
+        app: The ASGI application to wrap.
+        public_key: RSA public key (PEM format) used to verify JWT signatures.
+            Obtain this from the identity service's ``keys/public.pem``.
+        algorithm: JWT signing algorithm. Defaults to ``"RS256"``.
+        exclude_paths: List of path prefixes to skip authentication for.
+            Defaults to ``["/health", "/docs", "/openapi.json"]``.
+
+    Example:
+        ```python
+        from pathlib import Path
+        from identity_sdk.middleware import JWTAuthMiddleware
+
+        public_key = Path("keys/public.pem").read_text()
+
+        app.add_middleware(
+            JWTAuthMiddleware,
+            public_key=public_key,
+            exclude_paths=["/health", "/docs", "/openapi.json"],
+        )
+        ```
+    """
 
     def __init__(
         self,

@@ -69,3 +69,16 @@ class ResourceShareResponse(BaseModel):
     granted_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AccessibleResourcesRequest(BaseModel):
+    service_name: str
+    resource_type: str
+    action: str = Field(pattern=r"^(view|edit)$")
+    workspace_id: uuid.UUID
+    limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class AccessibleResourcesResponse(BaseModel):
+    resource_ids: list[uuid.UUID]
+    has_full_access: bool

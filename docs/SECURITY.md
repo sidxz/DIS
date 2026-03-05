@@ -1,80 +1,357 @@
-# Security Plan — Daikon Identity Service
+---
+title: Security
+description: Security architecture, authentication tiers, and hardening measures for the Daikon Identity Service
+---
 
-## Current State (Dev Only)
+# Security
 
-All communication is plain HTTP over localhost. No service-to-service authentication.
-JWT signatures are cryptographically sound (RS256) but tokens travel in plaintext.
+This document describes the security architecture of the Daikon Identity Service, covering transport security, authentication mechanisms, token lifecycle, service-to-service auth, and input validation.
 
-## Production Requirements
+---
 
-### 1. Transport Encryption (TLS)
+## Middleware Stack
 
-All service-to-service communication must use HTTPS. Options:
+The service applies middleware in a specific order (outermost first):
 
-- **Reverse proxy with TLS termination** (recommended for dev/small deployments):
-  Caddy or Traefik in front of both identity-service and consuming apps.
-  Services communicate over the Docker network in plaintext, proxy handles TLS at the edge.
+```
+Request
+  |
+  v
+SecurityHeadersMiddleware    -- security response headers
+  |
+  v
+SessionMiddleware            -- encrypted session for OAuth2 state
+  |
+  v
+TrustedHostMiddleware        -- Host header validation (production)
+  |
+  v
+CORSMiddleware               -- cross-origin request policy
+  |
+  v
+Rate Limiting (slowapi)      -- per-endpoint request throttling
+  |
+  v
+Application Routes
+```
 
-- **mTLS between services** (recommended for production/multi-host):
-  Each service has its own TLS certificate. Services verify each other's identity.
-  Can be managed via a service mesh (Linkerd, Istio) or manually with self-signed CAs.
+### Security Headers
 
-### 2. Service-to-Service Authentication
+Every response includes the following headers, set by `SecurityHeadersMiddleware`:
 
-The permission endpoints (`/permissions/*`) should only be callable by registered services,
-not by end users directly. Options:
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevents MIME type sniffing |
+| `X-Frame-Options` | `DENY` | Blocks clickjacking via iframes |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage |
+| `X-XSS-Protection` | `0` | Disables legacy XSS filter (modern CSP preferred) |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Restricts browser APIs |
 
-- **API key header**: Each consuming app gets a `SERVICE_API_KEY` that it sends in an
-  `X-Service-Key` header. The identity service validates it. Simple, effective for small
-  deployments.
+#### HSTS
 
-- **OAuth2 client credentials flow**: Each consuming app is an OAuth2 client with its own
-  client_id/client_secret. More standard, better for many services.
+When `COOKIE_SECURE=true` (production with HTTPS), the service adds:
 
-- **mTLS client certificates**: Service identity verified at the transport layer. Most
-  secure, highest ops overhead.
+```
+Strict-Transport-Security: max-age=63072000; includeSubDomains
+```
 
-**Recommendation**: Start with API key header (Phase 1), migrate to client credentials
-or mTLS when the number of consuming services grows beyond 3-4.
+This enforces HTTPS for two years and covers all subdomains. Only enable this when your deployment is fully behind TLS.
 
-### 3. Token Transport Security
+### Session Middleware
 
-- Access tokens in browser: Use `HttpOnly`, `Secure`, `SameSite=Strict` cookies
-  instead of localStorage (prevents XSS token theft).
-- Refresh tokens: Store in Redis server-side, send only a session cookie to the browser.
-- All cookie flags require HTTPS to be effective.
+Starlette's `SessionMiddleware` provides encrypted, signed cookies used exclusively by Authlib during the OAuth2 authorization code flow. The session stores the `state` parameter and PKCE `code_verifier` between the redirect and callback steps.
 
-### 4. Permission API Access Control
+**Configuration:**
 
-Separate two types of callers:
+```bash
+# Generate a strong secret (required in production)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
 
-| Caller | Endpoints they can access | Auth method |
-|--------|--------------------------|-------------|
-| **End users** (via JWT) | `/auth/*`, `/users/me`, `/workspaces/*`, `/workspaces/*/groups/*` | JWT in Authorization header |
-| **Service backends** (via API key) | `/permissions/*` | API key in X-Service-Key header |
+```env
+SESSION_SECRET_KEY=your-generated-secret-here
+```
 
-The `/permissions/check`, `/permissions/register`, and share endpoints should reject
-requests that don't have a valid service API key, even if they have a valid JWT.
+The default value `dev-only-change-me-in-production` is intentionally weak and must be replaced before deployment.
 
-### 5. Implementation Plan
+### Trusted Host Middleware
 
-#### Phase A: API Key for Service-to-Service
-- Add `SERVICE_API_KEYS` config (comma-separated list of valid keys)
-- Add `require_service_key` dependency to permission routes
-- Update SDK's `PermissionClient` to send `X-Service-Key` header
-- Update `.env.example` with `SERVICE_API_KEY` variable
+When `ALLOWED_HOSTS` is set to anything other than `*`, Starlette's `TrustedHostMiddleware` validates the `Host` header on every request. This prevents Host header injection attacks used in cache poisoning and password reset exploits.
 
-#### Phase B: HTTPS via Reverse Proxy
-- Add Caddy to docker-compose.yml with automatic TLS (self-signed for dev)
-- Update service URLs to use HTTPS
-- Add `Secure` and `HttpOnly` flags to cookie-based token transport
+```env
+# Development (disabled)
+ALLOWED_HOSTS=*
 
-#### Phase C: Token Storage Hardening
-- Move from Authorization header to HttpOnly cookies for browser clients
-- Implement CSRF protection for cookie-based auth
-- Add token rotation for refresh tokens (one-time use)
+# Production
+ALLOWED_HOSTS=identity.example.com,api.example.com
+```
 
-#### Phase D: mTLS (Optional, for Production)
-- Generate CA + per-service certificates
-- Configure services to verify client certificates
-- Remove API key mechanism (replaced by cert identity)
+### CORS
+
+Cross-Origin Resource Sharing is configured with explicit origin allowlisting:
+
+```env
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+```
+
+The CORS policy allows:
+
+- **Origins**: Only those listed in `CORS_ORIGINS` (no wildcards in production)
+- **Credentials**: Enabled (`allow_credentials=True`) for cookie-based admin auth
+- **Methods**: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
+- **Headers**: `Content-Type`, `Authorization`, `X-Service-Key`
+
+---
+
+## Authentication
+
+### Auth Tiers
+
+The service uses four authentication tiers, applied depending on the sensitivity and audience of each endpoint:
+
+| Tier | Mechanism | Use Case | Example Endpoints |
+|------|-----------|----------|-------------------|
+| **User JWT** | `Authorization: Bearer <token>` | End-user actions scoped to a workspace | `/users/me`, `/workspaces`, `/groups` |
+| **Service Key + User JWT** | `X-Service-Key` header + `Authorization: Bearer` | Service acting on behalf of a user | `/permissions/check`, `/permissions/accessible`, `POST /permissions/{id}/share` |
+| **Service Key Only** | `X-Service-Key` header | Autonomous service operations | `/permissions/register`, `/permissions/visibility`, `DELETE /permissions/{id}/share` |
+| **Admin Cookie** | `admin_token` HttpOnly cookie | Admin panel operations | `/auth/admin/me`, `/admin/*` |
+
+### RS256 JWT Tokens
+
+All tokens are signed with RS256 (RSA + SHA-256) using a private key and verified with the corresponding public key. This allows any service with the public key to validate tokens without contacting the identity service.
+
+**Key generation:**
+
+```bash
+openssl genrsa -out keys/private.pem 2048
+openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+```
+
+**Access token claims:**
+
+| Claim | Type | Description |
+|-------|------|-------------|
+| `sub` | UUID | User ID |
+| `jti` | UUID | Unique token identifier (for revocation) |
+| `email` | string | User email |
+| `name` | string | User display name |
+| `wid` | UUID | Workspace ID |
+| `wslug` | string | Workspace slug |
+| `wrole` | string | Workspace role (`owner`, `admin`, `member`, `viewer`) |
+| `groups` | UUID[] | Group IDs the user belongs to in this workspace |
+| `type` | string | `"access"` |
+| `iat` | timestamp | Issued at |
+| `exp` | timestamp | Expiration (default: 15 minutes) |
+
+**Admin token claims:**
+
+| Claim | Type | Description |
+|-------|------|-------------|
+| `sub` | UUID | User ID |
+| `email` | string | User email |
+| `name` | string | User display name |
+| `admin` | boolean | Always `true` |
+| `type` | string | `"admin_access"` |
+| `exp` | timestamp | Expiration (8 hours) |
+
+**Token lifetimes:**
+
+| Token | Default Lifetime | Configurable Via |
+|-------|-----------------|------------------|
+| Access token | 15 minutes | `ACCESS_TOKEN_EXPIRE_MINUTES` |
+| Refresh token | 7 days | `REFRESH_TOKEN_EXPIRE_DAYS` |
+| Admin token | 8 hours | Hardcoded |
+
+---
+
+## Token Lifecycle
+
+### Refresh Token Rotation
+
+The service implements refresh token rotation with **reuse detection**, modeled after the approach described in [Auth0's documentation](https://auth0.com/docs/secure/tokens/refresh-tokens/refresh-token-rotation):
+
+1. **Issuance**: When a user authenticates, the service issues an access token and a refresh token. The refresh token's `jti` is stored in Redis along with a `family_id`.
+
+2. **Rotation**: When the client presents a refresh token at `POST /auth/refresh`, the service:
+    - Atomically consumes the token (`GETDEL` in Redis -- one-time use)
+    - Issues a new access + refresh token pair
+    - Stores the new refresh token in the **same family**
+
+3. **Reuse detection**: If a consumed refresh token is presented again, the service rejects it. This signals potential token theft -- an attacker replaying a stolen token after the legitimate client already rotated it.
+
+4. **Family revocation**: When theft is detected or a user is deactivated, the service revokes the entire token family by deleting all `jti` entries in the family set.
+
+**Redis key structure:**
+
+| Key Pattern | Value | TTL |
+|-------------|-------|-----|
+| `rt:{jti}` | `{user_id}:{family_id}` | `REFRESH_TOKEN_EXPIRE_DAYS` |
+| `rtf:{family_id}` | Set of `jti` values | `REFRESH_TOKEN_EXPIRE_DAYS` |
+
+### Access Token Revocation
+
+Access tokens can be revoked before expiration (e.g., on logout) using a Redis denylist:
+
+1. Client calls `POST /auth/logout` with the access token in the `Authorization` header
+2. The service extracts the `jti` and `exp` from the token
+3. The `jti` is added to the denylist with a TTL equal to the token's remaining lifetime
+4. On every authenticated request, the `get_current_user` dependency checks the denylist
+
+**Redis key structure:**
+
+| Key Pattern | Value | TTL |
+|-------------|-------|-----|
+| `bl:{jti}` | `"1"` | Remaining seconds until token expiration |
+
+This approach keeps the denylist small -- entries automatically expire when the token would have expired anyway.
+
+---
+
+## Service-to-Service Authentication
+
+Backend services authenticate to the identity service using the `X-Service-Key` header. This is used for permission operations where a service acts autonomously or on behalf of a user.
+
+### Configuration
+
+```env
+# Development: empty = no enforcement (all requests pass through)
+SERVICE_API_KEYS=
+
+# Production: comma-separated list of valid keys
+SERVICE_API_KEYS=sk_prod_abc123,sk_prod_def456
+```
+
+### Behavior
+
+| `SERVICE_API_KEYS` Value | Request Without Key | Request With Invalid Key | Request With Valid Key |
+|--------------------------|--------------------|--------------------------|-----------------------|
+| Empty (dev mode) | Allowed | Allowed | Allowed |
+| Set (production) | 401 Unauthorized | 401 Unauthorized | Allowed |
+
+**Dev mode** is intentionally permissive: when `SERVICE_API_KEYS` is empty, the `require_service_key` dependency returns an empty string and does not reject any request. This allows local development without configuring keys. In production, always set at least one key.
+
+### Dual Auth (Service Key + User JWT)
+
+Some endpoints require both a service key and a user JWT. This pattern is used when a service needs to perform an action on behalf of a specific user -- the service key authenticates the calling service, and the JWT identifies the user:
+
+```
+POST /permissions/check
+X-Service-Key: sk_prod_abc123
+Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
+```
+
+---
+
+## Cookie Security
+
+The admin panel uses HttpOnly cookies for session management. Cookie attributes are configured for defense in depth:
+
+| Attribute | Value | Purpose |
+|-----------|-------|---------|
+| `httponly` | `True` | Prevents JavaScript access (XSS mitigation) |
+| `samesite` | `strict` | Blocks cross-site request inclusion (CSRF mitigation) |
+| `secure` | `COOKIE_SECURE` setting | Restricts to HTTPS when enabled |
+| `max_age` | `3600` (1 hour) | Cookie expires after 1 hour |
+| `path` | `/` | Available across all routes |
+
+```env
+# Development (HTTP)
+COOKIE_SECURE=false
+
+# Production (HTTPS)
+COOKIE_SECURE=true
+```
+
+When `COOKIE_SECURE=true`, the `Secure` flag ensures the cookie is only sent over HTTPS connections. Additionally, this flag enables HSTS headers on all responses.
+
+---
+
+## Rate Limiting
+
+Rate limiting is enforced per IP address using [slowapi](https://github.com/laurentS/slowapi) (built on top of `limits`). When a client exceeds the limit, the service responds with `429 Too Many Requests` and a `Retry-After` header.
+
+### Endpoint Limits
+
+| Endpoint | Limit | Rationale |
+|----------|-------|-----------|
+| `GET /auth/login/{provider}` | 10/minute | Prevents OAuth redirect abuse |
+| `GET /auth/callback/{provider}` | 10/minute | Limits callback processing |
+| `POST /auth/refresh` | 10/minute | Prevents refresh token brute-force |
+| `GET /auth/admin/login/{provider}` | 5/minute | Stricter limit on admin login |
+| `GET /auth/admin/callback/{provider}` | 5/minute | Stricter limit on admin callback |
+
+Rate limit state is keyed by the client's remote IP address (`get_remote_address`). If the service is behind a reverse proxy, ensure `X-Forwarded-For` is configured correctly so the real client IP is used.
+
+---
+
+## OAuth Hardening
+
+### PKCE (Proof Key for Code Exchange)
+
+PKCE prevents authorization code interception attacks. The service uses **S256** (SHA-256) code challenge method on providers that support it:
+
+| Provider | PKCE | Method | Notes |
+|----------|------|--------|-------|
+| Google | Yes | S256 | Full OIDC with `openid email profile` scope |
+| Microsoft EntraID | Yes | S256 | Full OIDC with `openid email profile` scope |
+| GitHub | No | N/A | GitHub does not support PKCE as of 2025; relies on `state` parameter |
+
+PKCE is configured at the Authlib client registration level via `code_challenge_method="S256"`. Authlib automatically generates the `code_verifier` and `code_challenge`, storing the verifier in the session for validation during the callback.
+
+### State Parameter
+
+All OAuth2 flows use the `state` parameter (managed by Authlib via `SessionMiddleware`) to prevent CSRF attacks during the authorization code exchange. The state is generated on redirect, stored in the encrypted session cookie, and validated on callback.
+
+---
+
+## Input Validation
+
+### Pydantic Schemas
+
+All request bodies are validated with Pydantic models. Invalid input is rejected with a `422 Unprocessable Entity` response before reaching any business logic. This includes:
+
+- Type checking and coercion
+- UUID format validation
+- Enum value constraints (e.g., workspace roles, permission actions)
+- Required vs. optional field enforcement
+
+### CSV Upload Limits
+
+CSV import endpoints (used by the admin panel) enforce a **5 MB file size limit** to prevent denial-of-service via large uploads.
+
+---
+
+## Configuration Reference
+
+All security-related environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_SECRET_KEY` | `dev-only-change-me-in-production` | Secret for signing session cookies (OAuth2 state) |
+| `SERVICE_API_KEYS` | (empty) | Comma-separated valid service keys; empty = no enforcement |
+| `COOKIE_SECURE` | `false` | Set `true` in production to enable `Secure` flag and HSTS |
+| `ALLOWED_HOSTS` | `*` | Comma-separated allowed Host header values; `*` = allow all |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed CORS origins |
+| `JWT_PRIVATE_KEY_PATH` | `keys/private.pem` | Path to RS256 private key for signing tokens |
+| `JWT_PUBLIC_KEY_PATH` | `keys/public.pem` | Path to RS256 public key for verifying tokens |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime in minutes |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime in days |
+| `ADMIN_EMAILS` | (empty) | Comma-separated emails auto-promoted to admin on login |
+
+---
+
+## Production Checklist
+
+Before deploying to production, verify the following:
+
+- [ ] `SESSION_SECRET_KEY` is set to a cryptographically random value (not the default)
+- [ ] `SERVICE_API_KEYS` contains at least one strong, unique key
+- [ ] `COOKIE_SECURE=true` and the service is behind TLS
+- [ ] `ALLOWED_HOSTS` is set to your actual domain(s), not `*`
+- [ ] `CORS_ORIGINS` lists only your frontend origin(s)
+- [ ] RS256 key pair is generated and `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` point to the correct files
+- [ ] The private key file has restrictive permissions (`chmod 600`)
+- [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
+- [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
+- [ ] Redis is password-protected and not exposed to the public internet
+- [ ] PostgreSQL uses strong credentials and is not exposed to the public internet

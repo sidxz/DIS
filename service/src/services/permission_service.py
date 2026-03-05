@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import GroupMembership
@@ -171,3 +171,124 @@ async def check_permission(
                 return True
 
     return False
+
+
+async def lookup_accessible_resources(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    workspace_role: str,
+    group_ids: list[uuid.UUID],
+    service_name: str,
+    resource_type: str,
+    action: str,
+    limit: int | None = None,
+) -> tuple[list[uuid.UUID], bool]:
+    """
+    Return (resource_ids, has_full_access) for the given user context.
+
+    Admin/owner roles get has_full_access=True. If no limit is set, resource_ids
+    is empty (caller should skip filtering). With a limit, returns up to that
+    many IDs even for full-access users.
+    """
+    is_privileged = workspace_role in ("admin", "owner")
+
+    if is_privileged and limit is None:
+        return [], True
+
+    # Base filter: same workspace, service, type
+    base_filter = [
+        ResourcePermission.workspace_id == workspace_id,
+        ResourcePermission.service_name == service_name,
+        ResourcePermission.resource_type == resource_type,
+    ]
+
+    if is_privileged:
+        # Admin/owner: all resources in workspace for this service/type
+        stmt = (
+            select(ResourcePermission.resource_id)
+            .where(*base_filter)
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all()), True
+
+    # Non-privileged: UNION of all access paths
+    # 1. Resources owned by user
+    owned = select(ResourcePermission.resource_id).where(
+        *base_filter,
+        ResourcePermission.owner_id == user_id,
+    )
+
+    queries = [owned]
+
+    # 2. Workspace-visible resources
+    if action == "view":
+        ws_visible = select(ResourcePermission.resource_id).where(
+            *base_filter,
+            ResourcePermission.visibility == "workspace",
+        )
+        queries.append(ws_visible)
+    elif action == "edit" and workspace_role == "editor":
+        ws_editable = select(ResourcePermission.resource_id).where(
+            *base_filter,
+            ResourcePermission.visibility == "workspace",
+        )
+        queries.append(ws_editable)
+
+    # 3. Direct user shares
+    if action == "view":
+        user_shared = (
+            select(ResourcePermission.resource_id)
+            .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+            .where(
+                *base_filter,
+                ResourceShare.grantee_type == "user",
+                ResourceShare.grantee_id == user_id,
+            )
+        )
+    else:
+        user_shared = (
+            select(ResourcePermission.resource_id)
+            .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+            .where(
+                *base_filter,
+                ResourceShare.grantee_type == "user",
+                ResourceShare.grantee_id == user_id,
+                ResourceShare.permission == "edit",
+            )
+        )
+    queries.append(user_shared)
+
+    # 4. Group shares
+    if group_ids:
+        if action == "view":
+            group_shared = (
+                select(ResourcePermission.resource_id)
+                .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+                .where(
+                    *base_filter,
+                    ResourceShare.grantee_type == "group",
+                    ResourceShare.grantee_id.in_(group_ids),
+                )
+            )
+        else:
+            group_shared = (
+                select(ResourcePermission.resource_id)
+                .join(ResourceShare, ResourceShare.resource_permission_id == ResourcePermission.id)
+                .where(
+                    *base_filter,
+                    ResourceShare.grantee_type == "group",
+                    ResourceShare.grantee_id.in_(group_ids),
+                    ResourceShare.permission == "edit",
+                )
+            )
+        queries.append(group_shared)
+
+    combined = union(*queries)
+    stmt = select(combined.c.resource_id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+
+    result = await db.execute(stmt)
+    return list(result.scalars().all()), False

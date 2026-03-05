@@ -1,8 +1,7 @@
-import uuid
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import CurrentUser, get_current_user
 from src.database import get_db
 from src.schemas.user import UserResponse, UserUpdateRequest
 from src.services import user_service
@@ -10,27 +9,21 @@ from src.services import user_service
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-# TODO: replace with JWT-based dependency
-async def _get_current_user_id() -> uuid.UUID:
-    raise HTTPException(status_code=401, detail="Not authenticated")
-
-
 @router.get("/me", response_model=UserResponse)
 async def get_me(
-    user_id: uuid.UUID = Depends(_get_current_user_id),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await user_service.get_user_by_id(db, user_id)
-    if not user:
+    result = await user_service.get_user_by_id(db, user.user_id)
+    if not result:
         raise HTTPException(status_code=404, detail="User not found")
-    return user
+    return result
 
 
 @router.patch("/me", response_model=UserResponse)
 async def update_me(
     body: UserUpdateRequest,
-    user_id: uuid.UUID = Depends(_get_current_user_id),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await user_service.update_user(db, user_id, name=body.name, avatar_url=body.avatar_url)
-    return user
+    return await user_service.update_user(db, user.user_id, name=body.name, avatar_url=body.avatar_url)

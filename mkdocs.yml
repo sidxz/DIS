@@ -1,0 +1,133 @@
+site_name: Daikon Identity Service
+site_description: Authentication, workspace management, and permissions microservice
+site_url: https://daikon-identity.dev
+
+repo_name: daikon-identity-service
+repo_url: https://github.com/daikon/identity-service
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - section-index
+  - glightbox
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [sdk/src]
+          options:
+            show_source: true
+            show_root_heading: true
+            show_symbol_type_heading: true
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.mark
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - attr_list
+  - md_in_html
+  - def_list
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/quickstart.md
+    - Configuration: getting-started/configuration.md
+  - Guide:
+    - guide/index.md
+    - Architecture: guide/architecture.md
+    - Authentication: guide/authentication.md
+    - JWT Tokens: guide/jwt.md
+    - Workspaces: guide/workspaces.md
+    - Groups: guide/groups.md
+    - Permissions: guide/permissions.md
+    - Service Auth: guide/service-auth.md
+    - Admin Panel: guide/admin.md
+  - SDK:
+    - sdk/index.md
+    - Installation: sdk/installation.md
+    - Middleware: sdk/middleware.md
+    - Dependencies: sdk/dependencies.md
+    - Permission Client: sdk/permission-client.md
+    - Integration Guide: sdk/integration.md
+    - Examples: sdk/examples.md
+  - API Reference:
+    - api/index.md
+    - Auth: api/auth.md
+    - Users: api/users.md
+    - Workspaces: api/workspaces.md
+    - Groups: api/groups.md
+    - Permissions: api/permissions.md
+    - Schemas: api/schemas.md
+  - SDK Reference:
+    - reference/index.md
+    - Types: reference/types.md
+    - Middleware: reference/middleware.md
+    - Dependencies: reference/dependencies.md
+    - Permissions: reference/permissions.md
+  - Security: security.md
+  - Deployment:
+    - deployment/index.md
+    - Docker: deployment/docker.md
+    - Production: deployment/production.md
+    - Environment: deployment/environment.md
+  - Contributing:
+    - contributing/index.md
+    - Dev Setup: contributing/setup.md
+    - Project Structure: contributing/structure.md
+    - Database: contributing/database.md
+    - Testing: contributing/testing.md
+    - Code Style: contributing/code-style.md

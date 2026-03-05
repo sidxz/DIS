@@ -3,8 +3,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies import CurrentUser, get_current_user, require_service_key
 from src.database import get_db
 from src.schemas.permission import (
+    AccessibleResourcesRequest,
+    AccessibleResourcesResponse,
     PermissionCheckRequest,
     PermissionCheckResponse,
     PermissionCheckResult,
@@ -18,23 +21,91 @@ from src.services import permission_service
 router = APIRouter(prefix="/permissions", tags=["permissions"])
 
 
-# TODO: replace with JWT-based dependency
-async def _get_current_user_id() -> uuid.UUID:
-    raise HTTPException(status_code=401, detail="Not authenticated")
+# --- Dual auth: service key + user JWT ---
 
 
 @router.post("/check", response_model=PermissionCheckResponse)
 async def check_permissions(
     body: PermissionCheckRequest,
+    _key: str = Depends(require_service_key),
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # TODO: extract user context from JWT (user_id, workspace_id, workspace_role, group_ids)
-    raise HTTPException(status_code=501, detail="Not implemented yet — requires JWT context")
+    results = []
+    for item in body.checks:
+        allowed = await permission_service.check_permission(
+            db,
+            user_id=user.user_id,
+            workspace_id=user.workspace_id,
+            workspace_role=user.workspace_role,
+            group_ids=user.groups,
+            service_name=item.service_name,
+            resource_type=item.resource_type,
+            resource_id=item.resource_id,
+            action=item.action,
+        )
+        results.append(
+            PermissionCheckResult(
+                service_name=item.service_name,
+                resource_type=item.resource_type,
+                resource_id=item.resource_id,
+                action=item.action,
+                allowed=allowed,
+            )
+        )
+    return PermissionCheckResponse(results=results)
+
+
+@router.post("/accessible", response_model=AccessibleResourcesResponse)
+async def accessible_resources(
+    body: AccessibleResourcesRequest,
+    _key: str = Depends(require_service_key),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.workspace_id != user.workspace_id:
+        raise HTTPException(status_code=403, detail="Cross-workspace lookup not allowed")
+
+    resource_ids, has_full_access = await permission_service.lookup_accessible_resources(
+        db,
+        user_id=user.user_id,
+        workspace_id=user.workspace_id,
+        workspace_role=user.workspace_role,
+        group_ids=user.groups,
+        service_name=body.service_name,
+        resource_type=body.resource_type,
+        action=body.action,
+        limit=body.limit,
+    )
+    return AccessibleResourcesResponse(resource_ids=resource_ids, has_full_access=has_full_access)
+
+
+@router.post("/{permission_id}/share", status_code=201)
+async def share_resource(
+    permission_id: uuid.UUID,
+    body: ShareRequest,
+    _key: str = Depends(require_service_key),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await permission_service.share_resource(
+        db,
+        permission_id=permission_id,
+        grantee_type=body.grantee_type,
+        grantee_id=body.grantee_id,
+        permission=body.permission,
+        granted_by=user.user_id,
+    )
+    return {"status": "ok"}
+
+
+# --- Service-only auth: service key ---
 
 
 @router.post("/register", response_model=ResourcePermissionResponse, status_code=201)
 async def register_resource(
     body: RegisterResourceRequest,
+    _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
     perm = await permission_service.register_resource(
@@ -53,33 +124,17 @@ async def register_resource(
 async def update_visibility(
     permission_id: uuid.UUID,
     body: UpdateVisibilityRequest,
+    _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
     return await permission_service.update_visibility(db, permission_id, body.visibility)
-
-
-@router.post("/{permission_id}/share", status_code=201)
-async def share_resource(
-    permission_id: uuid.UUID,
-    body: ShareRequest,
-    user_id: uuid.UUID = Depends(_get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    await permission_service.share_resource(
-        db,
-        permission_id=permission_id,
-        grantee_type=body.grantee_type,
-        grantee_id=body.grantee_id,
-        permission=body.permission,
-        granted_by=user_id,
-    )
-    return {"status": "ok"}
 
 
 @router.delete("/{permission_id}/share")
 async def revoke_share(
     permission_id: uuid.UUID,
     body: ShareRequest,
+    _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
     await permission_service.revoke_share(
@@ -96,6 +151,7 @@ async def get_resource_acl(
     service_name: str,
     resource_type: str,
     resource_id: uuid.UUID,
+    _key: str = Depends(require_service_key),
     db: AsyncSession = Depends(get_db),
 ):
     perm = await permission_service.get_resource_permission(db, service_name, resource_type, resource_id)

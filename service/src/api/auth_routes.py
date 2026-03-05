@@ -3,13 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse, RedirectResponse
 
-from src.api.dependencies import require_admin
-from src.auth.jwt import create_admin_token
+from src.api.dependencies import CurrentUser, get_current_user, require_admin
+from src.auth.jwt import create_admin_token, decode_token
 from src.auth.providers import get_configured_providers, oauth
 from src.config import settings
 from src.database import get_db
 from src.schemas.auth import ProviderListResponse, RefreshRequest, TokenResponse
-from src.services import auth_service
+from src.middleware.rate_limit import limiter
+from src.services import activity_service, auth_service, token_service
 
 logger = structlog.get_logger()
 
@@ -22,6 +23,7 @@ async def list_providers():
 
 
 @router.get("/login/{provider}")
+@limiter.limit("10/minute")
 async def login(provider: str, request: Request):
     configured = get_configured_providers()
     if provider not in configured:
@@ -32,6 +34,7 @@ async def login(provider: str, request: Request):
 
 
 @router.get("/callback/{provider}")
+@limiter.limit("10/minute")
 async def callback(
     provider: str,
     request: Request,
@@ -77,27 +80,53 @@ async def callback(
         provider_data=profile,
     )
 
+    await activity_service.log_activity(
+        db, action="user_login", target_type="user", target_id=user.id,
+        actor_id=user.id, detail={"provider": provider, "ip": request.client.host if request.client else None},
+    )
+    await db.commit()
+
     # TODO: redirect to frontend with auth code / set cookie
     # For now, redirect to frontend with user ID for workspace selection
     return RedirectResponse(url=f"{settings.frontend_url}/auth/callback?user_id={user.id}")
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(body: RefreshRequest):
-    # TODO: validate refresh token from Redis, issue new access token
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+@limiter.limit("10/minute")
+async def refresh_token(
+    request: Request,
+    body: RefreshRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    return tokens
 
 
 @router.post("/logout")
-async def logout():
-    # TODO: revoke refresh token in Redis
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+async def logout(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+):
+    # Blacklist the current access token
+    auth_header = request.headers.get("Authorization", "")
+    token_str = auth_header.removeprefix("Bearer ")
+    try:
+        payload = decode_token(token_str)
+        if jti := payload.get("jti"):
+            await token_service.blacklist_access_token(jti, payload["exp"])
+    except Exception:
+        pass  # Token already expired or invalid — still log out
+    return {"ok": True}
 
 
 # --- Admin auth endpoints ---
 
 
 @router.get("/admin/login/{provider}")
+@limiter.limit("5/minute")
 async def admin_login(provider: str, request: Request):
     configured = get_configured_providers()
     if provider not in configured:
@@ -108,13 +137,12 @@ async def admin_login(provider: str, request: Request):
 
 
 @router.get("/admin/callback/{provider}")
+@limiter.limit("5/minute")
 async def admin_callback(
     provider: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    import traceback
-
     try:
         configured = get_configured_providers()
         if provider not in configured:
@@ -159,23 +187,29 @@ async def admin_callback(
                 status_code=302,
             )
 
+        await activity_service.log_activity(
+            db, action="admin_login", target_type="user", target_id=user.id,
+            actor_id=user.id, detail={"provider": provider, "ip": request.client.host if request.client else None},
+        )
+        await db.commit()
+
         admin_token = create_admin_token(user_id=user.id, email=user.email, name=user.name)
         response = RedirectResponse(url=f"{settings.admin_url}/", status_code=302)
         response.set_cookie(
             key="admin_token",
             value=admin_token,
             httponly=True,
-            samesite="lax",
-            max_age=8 * 3600,
+            secure=settings.cookie_secure,
+            samesite="strict",
+            max_age=3600,
             path="/",
         )
         return response
     except HTTPException:
         raise
     except Exception as e:
-        tb = traceback.format_exc()
-        logger.error("admin callback error", error=str(e), traceback=tb)
-        return JSONResponse(status_code=500, content={"detail": str(e), "traceback": tb})
+        logger.error("admin callback error", error=str(e), exc_info=True)
+        return JSONResponse(status_code=500, content={"detail": "Authentication failed"})
 
 
 @router.get("/admin/me")

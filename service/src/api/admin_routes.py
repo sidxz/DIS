@@ -486,9 +486,19 @@ async def revoke_permission_share(
 
 # ── CSV Import ────────────────────────────────────────────────────────
 
+_MAX_CSV_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+async def _read_csv(file: UploadFile) -> str:
+    content = await file.read()
+    if len(content) > _MAX_CSV_SIZE:
+        raise HTTPException(status_code=413, detail="CSV file too large (max 5 MB)")
+    return content.decode("utf-8")
+
+
 @router.post("/import/csv/preview", response_model=CsvImportPreview)
 async def csv_preview(file: UploadFile = File(...)):
-    content = (await file.read()).decode("utf-8")
+    content = await _read_csv(file)
     return admin_service.parse_csv(content)
 
 
@@ -498,7 +508,7 @@ async def csv_execute(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    content = (await file.read()).decode("utf-8")
+    content = await _read_csv(file)
     preview = admin_service.parse_csv(content)
     return await admin_service.execute_import(
         db, preview["rows"], actor_id=uuid.UUID(admin["sub"]),

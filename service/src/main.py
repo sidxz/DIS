@@ -4,6 +4,7 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
@@ -11,7 +12,11 @@ from src.api.group_routes import router as group_router
 from src.api.permission_routes import router as permission_router
 from src.api.user_routes import router as user_router
 from src.api.workspace_routes import router as workspace_router
+from slowapi.errors import RateLimitExceeded
+
 from src.config import settings
+from src.middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from src.middleware.security_headers import SecurityHeadersMiddleware
 
 logger = structlog.get_logger()
 
@@ -48,16 +53,29 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# --- Middleware (applied bottom-to-top, so first added = outermost) ---
+
+# Security headers on every response
+app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
+
 # Session middleware required by Authlib for OAuth2 state
-app.add_middleware(SessionMiddleware, secret_key="change-me-in-production")
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+
+# Trusted host validation (prevents Host header attacks)
+if settings.allowed_hosts != "*":
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Service-Key"],
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 app.include_router(admin_router)
 app.include_router(auth_router)

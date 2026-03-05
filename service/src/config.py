@@ -35,8 +35,16 @@ class Settings(BaseSettings):
     base_url: str = "http://localhost:9003"
     frontend_url: str = "http://localhost:3000"
 
+    # Session (generate with: python -c "import secrets; print(secrets.token_urlsafe(32))")
+    session_secret_key: str = "dev-only-change-me-in-production"
+
     # CORS (comma-separated in .env)
     cors_origins: str = "http://localhost:3000"
+
+    # Security
+    cookie_secure: bool = False  # Set True in production (requires HTTPS)
+    allowed_hosts: str = "*"  # comma-separated; * = allow all (dev)
+    service_api_keys: str = ""  # comma-separated; empty = no enforcement (dev)
 
     # Admin
     admin_emails: str = ""
@@ -51,6 +59,14 @@ class Settings(BaseSettings):
         if not self.admin_emails:
             return []
         return [e.strip() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def service_api_key_set(self) -> set[str]:
+        return {k.strip() for k in self.service_api_keys.split(",") if k.strip()}
 
 
 settings = Settings()
