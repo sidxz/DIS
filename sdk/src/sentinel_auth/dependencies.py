@@ -61,7 +61,7 @@ def require_role(minimum_role: str) -> Callable:
     return dependency
 
 
-def require_action(role_client: "RoleClient", action: str) -> Callable:
+def require_action(role_client: RoleClient, action: str) -> Callable:
     """Dependency factory that enforces an RBAC action via the identity service.
 
     Usage:
@@ -70,15 +70,11 @@ def require_action(role_client: "RoleClient", action: str) -> Callable:
             ...
     """
 
-    async def dependency(
-        request: Request, user: AuthenticatedUser = Depends(get_current_user)
-    ) -> AuthenticatedUser:
+    async def dependency(request: Request, user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")
         allowed = await role_client.check_action(token, action, user.workspace_id)
         if not allowed:
-            raise HTTPException(
-                status_code=403, detail=f"Action '{action}' not permitted"
-            )
+            raise HTTPException(status_code=403, detail=f"Action '{action}' not permitted")
         return user
 
     return dependency

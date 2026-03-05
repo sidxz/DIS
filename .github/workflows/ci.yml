@@ -34,6 +34,26 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check service/src/ sdk/src/
 
+  sdk-test:
+    name: SDK Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install SDK with dev deps
+        run: cd sdk && uv sync --extra dev
+
+      - name: Run tests with coverage
+        run: cd sdk && uv run pytest -q --cov=sentinel_auth --cov-report=xml
+
   dependency-scan:
     name: Dependency Scan (Trivy)
     runs-on: ubuntu-latest

@@ -1,0 +1,40 @@
+name: Publish SDK to PyPI
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+jobs:
+  publish:
+    name: Build & Publish SDK
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # PyPI trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install SDK dev deps
+        run: cd sdk && uv sync --extra dev
+
+      - name: Lint
+        run: cd sdk && uv run ruff check src/ tests/
+
+      - name: Format check
+        run: cd sdk && uv run ruff format --check src/ tests/
+
+      - name: Test
+        run: cd sdk && uv run pytest -q
+
+      - name: Build
+        run: cd sdk && uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/dist/

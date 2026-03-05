@@ -61,9 +61,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         self.algorithm = algorithm
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths
         if any(request.url.path.startswith(p) for p in self.exclude_paths):
             return await call_next(request)
@@ -79,13 +77,9 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         try:
             payload = jwt.decode(token, self.public_key, algorithms=[self.algorithm])
         except jwt.ExpiredSignatureError:
-            return JSONResponse(
-                status_code=401, content={"detail": "Token has expired"}
-            )
+            return JSONResponse(status_code=401, content={"detail": "Token has expired"})
         except jwt.InvalidTokenError as e:
-            return JSONResponse(
-                status_code=401, content={"detail": f"Invalid token: {e}"}
-            )
+            return JSONResponse(status_code=401, content={"detail": f"Invalid token: {e}"})
 
         request.state.user = AuthenticatedUser(
             user_id=uuid.UUID(payload["sub"]),
