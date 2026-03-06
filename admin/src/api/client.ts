@@ -27,7 +27,11 @@ const BASE = "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+      ...options?.headers,
+    },
     ...options,
   });
   if (!res.ok) {
@@ -48,7 +52,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE}${path}`, { method: "POST", body: form });
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    body: form,
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const detail = body.detail;

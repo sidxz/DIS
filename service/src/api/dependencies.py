@@ -28,6 +28,13 @@ async def require_admin(request: Request) -> dict:
         if await is_access_token_blacklisted(jti):
             raise HTTPException(status_code=401, detail="Token has been revoked")
 
+    # CSRF: require X-Requested-With header on state-changing methods
+    if request.method in ("POST", "PATCH", "PUT", "DELETE"):
+        if not request.headers.get("X-Requested-With"):
+            raise HTTPException(
+                status_code=403, detail="Missing X-Requested-With header"
+            )
+
     return payload
 
 
