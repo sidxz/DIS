@@ -28,17 +28,17 @@ async def store_refresh_token(
     jti: str,
     user_id: uuid.UUID,
     family_id: str,
+    workspace_id: uuid.UUID,
     client_app_id: uuid.UUID | None = None,
 ) -> None:
     """Store a refresh token with its family for rotation tracking."""
     r = await get_redis()
     ttl = settings.refresh_token_expire_days * 86400
     pipe = r.pipeline()
-    val = (
-        f"{user_id}:{family_id}:{client_app_id}"
-        if client_app_id
-        else f"{user_id}:{family_id}"
-    )
+    # Format: user_id:family_id:workspace_id[:client_app_id]
+    val = f"{user_id}:{family_id}:{workspace_id}"
+    if client_app_id:
+        val += f":{client_app_id}"
     pipe.set(f"{_REFRESH_PREFIX}{jti}", val, ex=ttl)
     pipe.sadd(f"{_FAMILY_PREFIX}{family_id}", jti)
     pipe.expire(f"{_FAMILY_PREFIX}{family_id}", ttl)
@@ -52,20 +52,23 @@ async def store_refresh_token(
 
 async def consume_refresh_token(
     jti: str,
-) -> tuple[uuid.UUID, str, uuid.UUID | None] | None:
+) -> tuple[uuid.UUID, str, uuid.UUID, uuid.UUID | None] | None:
     """Consume a refresh token (one-time use).
 
-    Returns (user_id, family_id, client_app_id) if valid, None if already consumed/expired.
+    Returns (user_id, family_id, workspace_id, client_app_id) if valid,
+    None if already consumed/expired.
     """
     r = await get_redis()
     val = await r.getdel(f"{_REFRESH_PREFIX}{jti}")
     if not val:
         return None
+    # Format: user_id:family_id:workspace_id[:client_app_id]
     parts = val.split(":")
     user_id = uuid.UUID(parts[0])
     family_id = parts[1]
-    client_app_id = uuid.UUID(parts[2]) if len(parts) > 2 else None
-    return user_id, family_id, client_app_id
+    workspace_id = uuid.UUID(parts[2])
+    client_app_id = uuid.UUID(parts[3]) if len(parts) > 3 else None
+    return user_id, family_id, workspace_id, client_app_id
 
 
 async def revoke_token_family(family_id: str) -> int:

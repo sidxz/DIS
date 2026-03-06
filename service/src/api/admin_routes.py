@@ -13,6 +13,7 @@ from src.api.dependencies import require_admin
 from src.config import settings
 from src.database import get_db
 from src.models.client_app import ClientApp
+from src.models.group import Group
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
 from src.schemas.admin import (
@@ -493,7 +494,7 @@ async def invite_workspace_member(
 ):
     try:
         m = await workspace_service.invite_member(
-            db, workspace_id, body.email, body.role
+            db, workspace_id, body.email, body.role, actor_role="owner"
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -520,7 +521,9 @@ async def update_workspace_member_role(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await workspace_service.update_member_role(db, workspace_id, user_id, body.role)
+        await workspace_service.update_member_role(
+            db, workspace_id, user_id, body.role, actor_role="owner"
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -545,7 +548,9 @@ async def remove_workspace_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await workspace_service.remove_member(db, workspace_id, user_id)
+        await workspace_service.remove_member(
+            db, workspace_id, user_id, actor_role="owner"
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -604,9 +609,12 @@ async def update_group(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    grp = await db.get(Group, group_id)
+    if not grp:
+        raise HTTPException(status_code=404, detail="Group not found")
     try:
         group = await group_service.update_group(
-            db, group_id, name=body.name, description=body.description
+            db, group_id, grp.workspace_id, name=body.name, description=body.description
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -628,8 +636,11 @@ async def delete_group(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    grp = await db.get(Group, group_id)
+    if not grp:
+        raise HTTPException(status_code=404, detail="Group not found")
     try:
-        await group_service.delete_group(db, group_id)
+        await group_service.delete_group(db, group_id, grp.workspace_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -658,8 +669,11 @@ async def add_group_member(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    grp = await db.get(Group, group_id)
+    if not grp:
+        raise HTTPException(status_code=404, detail="Group not found")
     try:
-        await group_service.add_member(db, group_id, user_id)
+        await group_service.add_member(db, group_id, grp.workspace_id, user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -681,8 +695,11 @@ async def remove_group_member(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    grp = await db.get(Group, group_id)
+    if not grp:
+        raise HTTPException(status_code=404, detail="Group not found")
     try:
-        await group_service.remove_member(db, group_id, user_id)
+        await group_service.remove_member(db, group_id, grp.workspace_id, user_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 

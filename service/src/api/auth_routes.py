@@ -155,7 +155,17 @@ async def callback(
             if not profile.get("email"):
                 resp = await client.get("user/emails", token=token)
                 emails = resp.json()
-                primary = next((e for e in emails if e.get("primary")), emails[0])
+                primary = next(
+                    (e for e in emails if e.get("primary") and e.get("verified")),
+                    None,
+                )
+                if not primary:
+                    return _error_page(
+                        403,
+                        "Email Not Verified",
+                        "Your GitHub account does not have a verified primary email. "
+                        "Please verify your email on GitHub and try again.",
+                    )
                 profile["email"] = primary["email"]
             provider_user_id = str(profile["id"])
             email = profile["email"]
@@ -164,6 +174,13 @@ async def callback(
         else:
             # OIDC providers (Google, EntraID) — parse ID token
             userinfo = token.get("userinfo", {})
+            if not userinfo.get("email_verified", False):
+                return _error_page(
+                    403,
+                    "Email Not Verified",
+                    "Your identity provider did not confirm your email address. "
+                    "Please verify your email and try again.",
+                )
             provider_user_id = userinfo.get("sub", "")
             email = userinfo.get("email", "")
             name = userinfo.get("name", "")
@@ -332,7 +349,7 @@ async def logout(
     auth_header = request.headers.get("Authorization", "")
     token_str = auth_header.removeprefix("Bearer ")
     try:
-        payload = decode_token(token_str)
+        payload = decode_token(token_str, audience="sentinel:access")
         if jti := payload.get("jti"):
             await token_service.blacklist_access_token(jti, payload["exp"])
         # Revoke all refresh token families for this user
@@ -381,7 +398,15 @@ async def admin_callback(
             if not profile.get("email"):
                 resp = await client.get("user/emails", token=token)
                 emails = resp.json()
-                primary = next((e for e in emails if e.get("primary")), emails[0])
+                primary = next(
+                    (e for e in emails if e.get("primary") and e.get("verified")),
+                    None,
+                )
+                if not primary:
+                    return RedirectResponse(
+                        url=f"{settings.admin_url}/login?error=email_not_verified",
+                        status_code=302,
+                    )
                 profile["email"] = primary["email"]
             provider_user_id = str(profile["id"])
             email = profile["email"]
@@ -389,6 +414,11 @@ async def admin_callback(
             avatar_url = profile.get("avatar_url")
         else:
             userinfo = token.get("userinfo", {})
+            if not userinfo.get("email_verified", False):
+                return RedirectResponse(
+                    url=f"{settings.admin_url}/login?error=email_not_verified",
+                    status_code=302,
+                )
             provider_user_id = userinfo.get("sub", "")
             email = userinfo.get("email", "")
             name = userinfo.get("name", "")

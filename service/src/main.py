@@ -57,17 +57,37 @@ async def lifespan(app: FastAPI):
     async with AsyncSession(db_engine) as db:
         await refresh_origins(db)
 
-    # Security warnings
-    if settings.session_secret_key == "dev-only-change-me-in-production":
-        logger.warning(
-            "SESSION_SECRET_KEY is using the default dev value — set a random secret in production"
-        )
-    if not settings.service_api_key_set:
-        logger.warning(
-            "SERVICE_API_KEYS is empty — all service-key checks are bypassed"
-        )
-    if not settings.cookie_secure:
-        logger.warning("COOKIE_SECURE is False — admin cookies will be sent over HTTP")
+    # Security checks — fail-closed in production, warn in dev
+    _insecure_session = settings.session_secret_key == "dev-only-change-me-in-production"
+    _no_service_keys = not settings.service_api_key_set
+    _insecure_cookie = not settings.cookie_secure
+
+    if not settings.debug:
+        errors = []
+        if _insecure_session:
+            errors.append("SESSION_SECRET_KEY is using the default dev value")
+        if _no_service_keys:
+            errors.append("SERVICE_API_KEYS is empty — service auth is disabled")
+        if _insecure_cookie:
+            errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
+        if errors:
+            for e in errors:
+                logger.critical(e)
+            raise RuntimeError(
+                "Refusing to start: insecure configuration with DEBUG=False. "
+                f"Fix: {'; '.join(errors)}"
+            )
+    else:
+        if _insecure_session:
+            logger.warning(
+                "SESSION_SECRET_KEY is using the default dev value — set a random secret in production"
+            )
+        if _no_service_keys:
+            logger.warning(
+                "SERVICE_API_KEYS is empty — all service-key checks are bypassed"
+            )
+        if _insecure_cookie:
+            logger.warning("COOKIE_SECURE is False — admin cookies will be sent over HTTP")
 
     app.state.start_time = time.time()
     yield

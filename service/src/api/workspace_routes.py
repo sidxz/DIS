@@ -120,7 +120,8 @@ async def invite_member(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     membership = await workspace_service.invite_member(
-        db, workspace_id, email=body.email, role=body.role
+        db, workspace_id, email=body.email, role=body.role,
+        actor_role=user.workspace_role,
     )
     return membership
 
@@ -136,7 +137,7 @@ async def update_member_role(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     return await workspace_service.update_member_role(
-        db, workspace_id, user_id, role=body.role
+        db, workspace_id, user_id, role=body.role, actor_role=user.workspace_role
     )
 
 
@@ -149,4 +150,6 @@ async def remove_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    await workspace_service.remove_member(db, workspace_id, user_id)
+    await workspace_service.remove_member(
+        db, workspace_id, user_id, actor_role=user.workspace_role
+    )

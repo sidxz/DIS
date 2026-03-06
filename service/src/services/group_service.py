@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.group import Group, GroupMembership
 from src.models.user import User
+from src.services import token_service
 
 
 async def create_group(
@@ -35,15 +36,24 @@ async def list_groups(db: AsyncSession, workspace_id: uuid.UUID) -> list[Group]:
     return list(result.scalars().all())
 
 
+async def _get_group_in_workspace(
+    db: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Group:
+    """Load a group and verify it belongs to the expected workspace."""
+    group = await db.get(Group, group_id)
+    if not group or group.workspace_id != workspace_id:
+        raise ValueError("Group not found")
+    return group
+
+
 async def update_group(
     db: AsyncSession,
     group_id: uuid.UUID,
+    workspace_id: uuid.UUID,
     name: str | None = None,
     description: str | None = None,
 ) -> Group:
-    group = await db.get(Group, group_id)
-    if not group:
-        raise ValueError("Group not found")
+    group = await _get_group_in_workspace(db, group_id, workspace_id)
     if name is not None:
         group.name = name
     if description is not None:
@@ -52,17 +62,21 @@ async def update_group(
     return group
 
 
-async def delete_group(db: AsyncSession, group_id: uuid.UUID) -> None:
-    group = await db.get(Group, group_id)
-    if not group:
-        raise ValueError("Group not found")
+async def delete_group(
+    db: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID
+) -> None:
+    group = await _get_group_in_workspace(db, group_id, workspace_id)
     await db.delete(group)
     await db.commit()
 
 
 async def add_member(
-    db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
 ) -> GroupMembership:
+    await _get_group_in_workspace(db, group_id, workspace_id)
     membership = GroupMembership(group_id=group_id, user_id=user_id)
     db.add(membership)
     await db.commit()
@@ -70,8 +84,12 @@ async def add_member(
 
 
 async def remove_member(
-    db: AsyncSession, group_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession,
+    group_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
 ) -> None:
+    await _get_group_in_workspace(db, group_id, workspace_id)
     stmt = select(GroupMembership).where(
         GroupMembership.group_id == group_id,
         GroupMembership.user_id == user_id,
@@ -82,6 +100,8 @@ async def remove_member(
         raise ValueError("Group membership not found")
     await db.delete(membership)
     await db.commit()
+    # Revoke tokens so stale group claims can't be used
+    await token_service.revoke_all_user_tokens(str(user_id))
 
 
 async def list_group_members(db: AsyncSession, group_id: uuid.UUID) -> list[dict]:

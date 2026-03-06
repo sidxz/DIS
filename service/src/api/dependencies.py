@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from fastapi import HTTPException, Request
 
-from src.auth.jwt import decode_token
+from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, decode_token
 from src.config import settings
 
 
@@ -13,7 +13,7 @@ async def require_admin(request: Request) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        payload = decode_token(token)
+        payload = decode_token(token, audience=_AUD_ADMIN)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     if not payload.get("admin"):
@@ -44,12 +44,9 @@ async def get_current_user(request: Request) -> CurrentUser:
         raise HTTPException(status_code=401, detail="Missing Bearer token")
     token = auth.removeprefix("Bearer ")
     try:
-        payload = decode_token(token)
+        payload = decode_token(token, audience=_AUD_ACCESS)
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    if payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Invalid token type")
 
     # Check token revocation (jti denylist)
     if jti := payload.get("jti"):
