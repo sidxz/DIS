@@ -1,15 +1,21 @@
 # Sentinel Auth — Production Docker Compose
 #
-# Prerequisites:
-#   1. Generate JWT keys:
-#      mkdir -p keys
-#      openssl genrsa -out keys/private.pem 2048
-#      openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+# Quick start:
+#   make setup-prod          # generates keys, certs, .env.prod (one-time)
+#   vim .env.prod            # set BASE_URL, OAuth creds, ADMIN_EMAILS
+#   docker stack deploy -c docker-compose.prod.yml sentinel
 #
-#   2. Create .env.prod from the template below and fill in all values.
+# What setup-prod generates:
+#   keys/private.pem, keys/public.pem  — RS256 JWT signing keys
+#   keys/tls/ca.crt, ca.key           — internal CA (self-signed)
+#   keys/tls/server.crt, server.key   — server cert (SANs: postgres, redis, localhost)
+#   .env.prod                          — random DB/Redis passwords + session secret
 #
-#   3. Run:
-#      docker compose -f docker-compose.prod.yml up -d
+# Security:
+#   - Postgres: SSL-encrypted connections (self-signed internal CA)
+#   - Redis: TLS + password auth, plain port disabled
+#   - All certs/keys mounted as Docker secrets (immutable, in-memory)
+#   - External TLS: use a reverse proxy (HAProxy/nginx/Caddy) in front of sentinel
 
 services:
   postgres:
@@ -18,6 +24,22 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Copy TLS certs with correct ownership/permissions, then start with SSL
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cp /run/secrets/tls_cert /tmp/server.crt
+        cp /run/secrets/tls_key /tmp/server.key
+        chown postgres:postgres /tmp/server.crt /tmp/server.key
+        chmod 600 /tmp/server.key
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/tmp/server.crt \
+          -c ssl_key_file=/tmp/server.key
+    secrets:
+      - tls_cert
+      - tls_key
     volumes:
       - pg_data:/var/lib/postgresql/data
     networks:
@@ -36,14 +58,28 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --tls-port 6379
+      --port 0
+      --tls-cert-file /run/secrets/tls_cert
+      --tls-key-file /run/secrets/tls_key
+      --tls-ca-cert-file /run/secrets/tls_ca
+      --tls-auth-clients no
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+    secrets:
+      - tls_cert
+      - tls_key
+      - tls_ca
     volumes:
       - redis_data:/data
     networks:
       - sentinel
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/run/secrets/tls_ca", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,8 +92,9 @@ services:
   sentinel:
     image: ghcr.io/sidxz/sentinel:latest
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0  # TLS not needed for Docker-internal bridge network
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
+      REDIS_URL: rediss://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_TLS_CA_CERT: /run/secrets/tls_ca
       BASE_URL: ${BASE_URL}
       ADMIN_URL: ${ADMIN_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-}  # base origins only; client app origins are loaded from DB
@@ -81,6 +118,7 @@ services:
     secrets:
       - jwt_private_key
       - jwt_public_key
+      - tls_ca
     ports:
       - "${SENTINEL_PORT:-9003}:9003"
     depends_on:
@@ -108,6 +146,12 @@ secrets:
     file: ./keys/private.pem
   jwt_public_key:
     file: ./keys/public.pem
+  tls_cert:
+    file: ./keys/tls/server.crt
+  tls_key:
+    file: ./keys/tls/server.key
+  tls_ca:
+    file: ./keys/tls/ca.crt
 
 volumes:
   pg_data:
