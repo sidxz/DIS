@@ -334,9 +334,9 @@ The admin SPA automatically includes `X-Requested-With: XMLHttpRequest` on all r
 
 Rate limiting uses two layers:
 
-1. **Global rate limit** — `GlobalRateLimitMiddleware` enforces **30 requests/minute per IP** across all endpoints (except `/health`). This is a simple in-memory sliding window that catches broad abuse regardless of endpoint.
+1. **Global rate limit** — `GlobalRateLimitMiddleware` enforces **30 requests/minute per IP** across all endpoints (except `/health`). Uses a Redis-backed atomic counter (Lua INCR+EXPIRE script).
 
-2. **Per-endpoint limits** — [slowapi](https://github.com/laurentS/slowapi) applies stricter limits on sensitive endpoints. These fire before the global limit.
+2. **Per-endpoint limits** — [slowapi](https://github.com/laurentS/slowapi) applies stricter limits on sensitive endpoints, backed by Redis via `REDIS_URL`. These fire before the global limit.
 
 When a client exceeds either limit, the service responds with `429 Too Many Requests` and a `Retry-After` header.
 
@@ -353,7 +353,10 @@ When a client exceeds either limit, the service responds with `429 Too Many Requ
 | `GET /auth/admin/login/{provider}` | 5/minute | Stricter limit on admin login |
 | `GET /auth/admin/callback/{provider}` | 5/minute | Stricter limit on admin callback |
 
-Rate limit state is keyed by the client's remote IP address. If the service is behind a reverse proxy, ensure `X-Forwarded-For` is configured correctly so the real client IP is used.
+Rate limit state is keyed by the client's remote IP address.
+
+!!! tip "Proxy-aware rate limiting"
+    When `BEHIND_PROXY=true`, the rate limiter extracts the client IP from the `X-Forwarded-For` header instead of the TCP connection address. Set this when deploying behind nginx, Caddy, ALB, or any reverse proxy.
 
 ---
 
@@ -425,9 +428,11 @@ All security-related environment variables:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime in days |
 | `ADMIN_TOKEN_EXPIRE_MINUTES` | `60` | Admin token lifetime in minutes |
-| `DEBUG` | `true` | Set `false` in production to disable `/docs`, `/redoc`, `/openapi.json` |
+| `DEBUG` | `false` | Set `true` for local development. Enables `/docs`, `/redoc`, `/openapi.json` and relaxes startup validation. |
+| `BEHIND_PROXY` | `false` | Set `true` when behind a reverse proxy. Enables proxy-aware rate limiting via `X-Forwarded-For`. |
 | `ADMIN_EMAILS` | (empty) | Comma-separated emails auto-promoted to admin on login |
-| `REDIS_URL` | `redis://localhost:9002/0` | Redis connection string. Use `rediss://` for TLS and include password: `rediss://:password@host:6379/0` |
+| `REDIS_URL` | `rediss://:sentinel_dev@localhost:9002/0` | Redis connection string. `rediss://` enables TLS. Include password in URL. |
+| `REDIS_TLS_CA_CERT` | `""` | Path to CA cert for Redis TLS verification. Empty = encrypted but no cert verification. |
 
 ---
 
@@ -446,6 +451,20 @@ When `DEBUG=false`, the service performs fail-closed validation at startup and *
 | Allowed hosts | Resolved to wildcard `*` | `ALLOWED_HOSTS is wildcard` |
 
 In development (`DEBUG=true`), these are logged as warnings instead of blocking startup.
+
+---
+
+## SDK Insecure URL Warnings
+
+All Python and JavaScript SDK clients (`PermissionClient`, `RoleClient`, `JWTAuthMiddleware`, `SentinelAuth`) log a warning when initialized with a plain `http://` URL that does not point to `localhost`, `127.0.0.1`, or `::1`.
+
+This catches accidental production deployments without HTTPS. The warning is informational and does not block requests.
+
+| SDK | Warning mechanism |
+|-----|-------------------|
+| Python (`sentinel-auth-sdk`) | `logging.warning()` via the `sentinel_auth` logger |
+| JS (`@sentinel-auth/js`) | `console.warn()` |
+| Next.js (`@sentinel-auth/nextjs`) | `console.warn()` in `createSentinelMiddleware` |
 
 ---
 
@@ -508,16 +527,20 @@ All output is saved to `pentest/reports/`:
 
 Before deploying to production, verify the following:
 
+- [ ] `make setup` run (generates keys, TLS certs, env files with random secrets)
+- [ ] `.env.prod` configured with production `BASE_URL`, `ADMIN_URL`, OAuth credentials
 - [ ] `SESSION_SECRET_KEY` is set to a cryptographically random value (not the default)
 - [ ] At least one service app is registered via the admin panel (`/admin/service-apps`) with a strong key
 - [ ] `COOKIE_SECURE=true` and the service is behind TLS
+- [ ] `DEBUG=false` to disable OpenAPI docs and enable fail-closed startup validation
+- [ ] `BEHIND_PROXY=true` if behind a reverse proxy
 - [ ] `ALLOWED_HOSTS` is set to your actual domain(s), not `*`
 - [ ] `CORS_ORIGINS` lists only your frontend origin(s)
 - [ ] RS256 key pair is generated and `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` point to the correct files
 - [ ] The private key file has restrictive permissions (`chmod 600`)
-- [ ] `DEBUG=false` to disable OpenAPI docs (`/docs`, `/redoc`, `/openapi.json`)
+- [ ] TLS certificates generated for Postgres and Redis (`keys/tls/`)
+- [ ] PostgreSQL connection uses SSL (`?ssl=require` in `DATABASE_URL`)
+- [ ] Redis uses TLS (`rediss://`), has a strong password, and is not exposed to the public internet
 - [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
 - [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
-- [ ] Redis uses TLS (`rediss://`), has a strong password, and is not exposed to the public internet
-- [ ] PostgreSQL uses strong credentials and is not exposed to the public internet
 - [ ] Startup validation passes with `DEBUG=false` (all checks green)

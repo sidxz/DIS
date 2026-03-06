@@ -1,6 +1,6 @@
 # Environment Variables
 
-Complete reference for all environment variables accepted by the Sentinel Auth. Variables are loaded from a `.env` file in the project root or from the process environment.
+Complete reference for all environment variables accepted by the Sentinel Auth. Variables are loaded from `service/.env` (development) or from the process environment / `.env.prod` (production Docker).
 
 ## Required for Production
 
@@ -8,8 +8,9 @@ These variables have insecure defaults and must be explicitly set in any non-dev
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SESSION_SECRET_KEY` | Signs OAuth2 state cookies. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"` | `dev-only-change-me-in-production` |
+| `SESSION_SECRET_KEY` | Signs OAuth2 state cookies. `make setup` generates this automatically. | `dev-only-change-me-in-production` |
 | `COOKIE_SECURE` | Set `true` to add the `Secure` flag to cookies (requires HTTPS). | `false` |
+| `DEBUG` | Set `false` for production. Disables `/docs` and `/redoc`, enables fail-closed startup validation. | `false` |
 | `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. | `""` (derived) |
 
 !!! note "Service API keys"
@@ -19,27 +20,22 @@ These variables have insecure defaults and must be explicitly set in any non-dev
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string using the `asyncpg` driver. | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity` |
+| `DATABASE_URL` | PostgreSQL connection string using the `asyncpg` driver. | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require` |
 
-The connection string must use the `postgresql+asyncpg://` scheme. The service uses SQLAlchemy 2.0 async, which requires the asyncpg driver.
+The connection string must use the `postgresql+asyncpg://` scheme. The `?ssl=require` parameter encrypts the connection (without certificate verification, which is safe for self-signed dev certs).
 
 ## Redis
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `REDIS_URL` | Redis connection string. Used for auth codes, refresh tokens, access token denylist, and rate limiting. | `redis://localhost:9002/0` |
+| `REDIS_URL` | Redis connection string. Used for auth codes, refresh tokens, access token denylist, and rate limiting. | `rediss://:sentinel_dev@localhost:9002/0` |
+| `REDIS_TLS_CA_CERT` | Path to CA certificate for Redis TLS verification. When empty, cert verification is skipped (connection is still encrypted). | `""` |
 
-In production, Redis must be authenticated and encrypted. Use the `rediss://` scheme (double s) for TLS and include a password:
+Both dev and prod use TLS (`rediss://`) by default. The dev compose auto-configures Redis with password auth and TLS using self-signed certs from `keys/tls/`.
 
-```ini
-# Development (default)
-REDIS_URL=redis://localhost:9002/0
+When `REDIS_TLS_CA_CERT` is set, the service verifies the Redis server certificate against the specified CA. When empty, certificate verification is skipped but the connection remains encrypted.
 
-# Production (password + TLS)
-REDIS_URL=rediss://:your-strong-password@redis-host:6380/0
-```
-
-The service validates Redis connectivity, authentication, and TLS at startup. With `DEBUG=false`, it refuses to start if any check fails. See the [production checklist](production.md#8-secure-redis) for details.
+The service validates Redis connectivity, authentication, and TLS at startup. With `DEBUG=false`, it refuses to start if any check fails. See the [production checklist](production.md#9-secure-redis) for details.
 
 ## JWT
 
@@ -51,9 +47,10 @@ The service validates Redis connectivity, authentication, and TLS at startup. Wi
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token lifetime in minutes. | `15` |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token lifetime in days. | `7` |
 
-Generate an RSA key pair:
+`make setup` generates the RSA key pair automatically. To generate manually:
 
 ```bash
+mkdir -p keys
 openssl genrsa -out keys/private.pem 2048
 openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 ```
@@ -100,6 +97,7 @@ Configure at least one provider to enable user login. Leave a provider's variabl
 | `CORS_ORIGINS` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. | `http://localhost:3000,http://localhost:9101` |
 | `COOKIE_SECURE` | Whether cookies require HTTPS. | `false` |
 | `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. Falls back to `*` if no hostnames found. | `""` (derived) |
+| `BEHIND_PROXY` | Set `true` when behind a reverse proxy. Enables proxy-aware rate limiting using `X-Forwarded-For`. | `false` |
 
 ## Admin
 

@@ -20,18 +20,25 @@ make setup
 This performs the following steps:
 
 1. **Generates JWT RSA keys** in `keys/private.pem` and `keys/public.pem` (skipped if keys already exist)
-2. **Installs Python dependencies** via `uv sync` for the workspace and the service
-3. **Installs admin panel dependencies** via `npm install` in the `admin/` directory
-4. **Starts PostgreSQL and Redis** containers with Docker Compose
-5. **Waits for PostgreSQL** to become healthy before returning
+2. **Generates TLS certificates** in `keys/tls/` — an internal CA + server cert covering `localhost`, `postgres`, `redis`, and `127.0.0.1` (used by both dev and prod Docker containers)
+3. **Creates `service/.env`** from `.env.dev.example` with a random `SESSION_SECRET_KEY` and correct key paths
+4. **Creates `.env.prod`** from `.env.prod.example` with random Postgres/Redis passwords and session secret
+5. **Installs Python dependencies** via `uv sync` for the workspace and the service
+6. **Installs admin panel dependencies** via `npm install` in the `admin/` directory
+7. **Starts PostgreSQL and Redis** containers with Docker Compose (both with TLS enabled)
+8. **Waits for PostgreSQL** to become healthy before returning
+9. **Prints next steps** — prompts you to add OAuth credentials and `ADMIN_EMAILS` to `service/.env`
 
 After setup completes, you will see:
 
 ```
 Setup complete!
-  make start   - start identity service (:9003)
-  make admin   - start admin UI (:9004)
-  make seed    - populate with test data (optional)
+
+  Next:
+    1. vim service/.env   — add OAuth creds (GOOGLE_*, GITHUB_*, etc.) + ADMIN_EMAILS
+    2. make start         — start identity service (:9003)
+    3. make admin         — start admin UI (:9004)
+    make seed             — populate with test data (optional)
 ```
 
 ## Environment Configuration
@@ -99,7 +106,7 @@ To stop containers and wipe the database (but keep installed dependencies and ke
 make clean
 ```
 
-For a complete reset that removes everything, including virtual environments, `node_modules`, and JWT keys:
+For a complete reset that removes everything — virtual environments, `node_modules` (including JS SDK packages), JWT keys, TLS certs, and generated env files (`service/.env`, `.env.prod`):
 
 ```bash
 make nuke

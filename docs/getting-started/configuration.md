@@ -96,6 +96,8 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
 | `CORS_ORIGINS` | `str` | `http://localhost:3000,http://localhost:9101` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. |
 | `COOKIE_SECURE` | `bool` | `false` | Set to `true` in production to mark cookies as `Secure` (requires HTTPS). |
 | `ALLOWED_HOSTS` | `str` | *(empty)* | Derived from `BASE_URL` and `ADMIN_URL` hostnames. Falls back to `*` (allow all) only if no hostnames found. Override with comma-separated hostnames. |
+| `DEBUG` | `bool` | `false` | Set `true` for local development. Enables `/docs` and `/redoc`, relaxes startup validation to warnings instead of hard failures. |
+| `BEHIND_PROXY` | `bool` | `false` | Set `true` when behind a reverse proxy (nginx, Caddy, ALB). Enables proxy-aware rate limiting using `X-Forwarded-For`. |
 
 !!! danger "Production security checklist"
     Before deploying to production, you **must**:

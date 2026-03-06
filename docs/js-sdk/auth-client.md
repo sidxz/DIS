@@ -158,6 +158,16 @@ Call `destroy()` when the client is no longer needed (e.g., on component unmount
 auth.destroy() // Clears refresh timer, removes listeners
 ```
 
+## HTTPS in Production
+
+The JS SDK logs a console warning if `sentinelUrl` uses plain `http://` with a non-localhost host. This is a reminder, not a hard error — but **all production traffic to Sentinel must use HTTPS** to protect tokens and credentials in transit.
+
+!!! warning "Insecure connection warning"
+    ```
+    [sentinel-auth] Connecting over plain HTTP to identity.example.com.
+    Use HTTPS in production to protect tokens and credentials.
+    ```
+
 ## Next Steps
 
 - [React Integration](react.md) -- use the auth client with React

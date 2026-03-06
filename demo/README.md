@@ -41,7 +41,7 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:9101
 
 ```bash
 # From the repo root
-make infra    # Start PostgreSQL + Redis
+make setup    # First-time: generates keys, certs, env files, starts Postgres + Redis
 make start    # Start the identity service on :9003
 ```
 
