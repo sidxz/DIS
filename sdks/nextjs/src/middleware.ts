@@ -48,12 +48,29 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
     }
   } catch { /* invalid URL — let verifyToken handle it */ }
 
+  const SENTINEL_HEADERS = [
+    'x-sentinel-user-id',
+    'x-sentinel-email',
+    'x-sentinel-name',
+    'x-sentinel-workspace-id',
+    'x-sentinel-workspace-slug',
+    'x-sentinel-workspace-role',
+  ] as const
+
   return async function middleware(req: NextRequest): Promise<NextResponse> {
     const { pathname } = req.nextUrl
 
+    // Strip any client-sent x-sentinel-* headers to prevent spoofing.
+    // This runs on ALL paths (public and protected) so that downstream
+    // server components / route handlers can never see forged identity.
+    const requestHeaders = new Headers(req.headers)
+    for (const h of SENTINEL_HEADERS) {
+      requestHeaders.delete(h)
+    }
+
     // Skip public paths
     if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-      return NextResponse.next()
+      return NextResponse.next({ request: { headers: requestHeaders } })
     }
 
     // Extract token from Authorization header or cookie
@@ -63,7 +80,7 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
       : req.cookies.get('sentinel_access_token')?.value
 
     if (!token) {
-      return handleUnauthenticated(req, loginPath)
+      return handleUnauthenticated(req, loginPath, requestHeaders)
     }
 
     try {
@@ -72,11 +89,11 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
 
       // Check workspace allowlist
       if (allowedWorkspaces && !allowedWorkspaces.includes(user.workspaceId)) {
-        return handleUnauthenticated(req, loginPath)
+        return handleUnauthenticated(req, loginPath, requestHeaders)
       }
 
-      // Forward user info in headers for server components/route handlers
-      const response = NextResponse.next()
+      // Forward verified user info in headers for server components/route handlers
+      const response = NextResponse.next({ request: { headers: requestHeaders } })
       response.headers.set('x-sentinel-user-id', user.userId)
       response.headers.set('x-sentinel-email', user.email)
       response.headers.set('x-sentinel-name', user.name)
@@ -85,7 +102,7 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
       response.headers.set('x-sentinel-workspace-role', user.workspaceRole)
       return response
     } catch {
-      return handleUnauthenticated(req, loginPath)
+      return handleUnauthenticated(req, loginPath, requestHeaders)
     }
   }
 }
@@ -93,12 +110,16 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
 function handleUnauthenticated(
   req: NextRequest,
   loginPath: string,
+  cleanHeaders?: Headers,
 ): NextResponse {
   const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
   if (isApiRoute) {
-    return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { detail: 'Unauthorized' },
+      { status: 401, headers: cleanHeaders },
+    )
   }
   const loginUrl = req.nextUrl.clone()
   loginUrl.pathname = loginPath
-  return NextResponse.redirect(loginUrl)
+  return NextResponse.redirect(loginUrl, { headers: cleanHeaders })
 }
