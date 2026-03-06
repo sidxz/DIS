@@ -74,7 +74,9 @@ async def lifespan(app: FastAPI):
         if _insecure_session:
             errors.append("SESSION_SECRET_KEY is using the default dev value")
         if _no_service_apps:
-            errors.append("No active service apps registered — service auth is disabled")
+            errors.append(
+                "No active service apps registered — service auth is disabled"
+            )
         if _insecure_cookie:
             errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
         if errors:

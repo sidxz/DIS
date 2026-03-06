@@ -178,6 +178,18 @@ export class SentinelAuth {
     return res
   }
 
+  /** Fetch JSON with automatic Bearer header, 401 retry, and response parsing. */
+  async fetchJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+    const headers = new Headers(init?.headers)
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+    const res = await this.fetch(input, { ...init, headers })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error((body as Record<string, string>).detail || `HTTP ${res.status}`)
+    }
+    return res.json()
+  }
+
   // ── Events ────────────────────────────────────────────────────────
 
   /** Subscribe to auth state changes. Returns an unsubscribe function. */

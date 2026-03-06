@@ -195,6 +195,7 @@ See the [React Integration](react.md) docs for full details on these exports.
 
 ## Next Steps
 
+- [Next.js Tutorial](../guide/tutorial-nextjs.md) -- step-by-step guide building a Team Notes app with Next.js
 - [React Integration](react.md) -- hooks, components, and provider
 - [Server Utilities](server.md) -- JWT verification and permission checks
 - [Auth Client](auth-client.md) -- underlying browser auth client

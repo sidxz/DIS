@@ -68,6 +68,7 @@ async def get_current_user(request: Request) -> CurrentUser:
 @dataclass(frozen=True)
 class ServiceKeyContext:
     """Resolved service identity from X-Service-Key header."""
+
     service_name: str  # bound service name, or "" in dev mode
 
 

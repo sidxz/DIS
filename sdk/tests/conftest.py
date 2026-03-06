@@ -50,6 +50,7 @@ def jwt_payload(user_id, workspace_id):
         "wslug": "acme-corp",
         "wrole": "editor",
         "groups": [],
+        "aud": "sentinel:access",
         "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1),
         "iat": datetime.datetime.now(datetime.UTC),
     }

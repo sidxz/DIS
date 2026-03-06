@@ -83,7 +83,11 @@ The token is decoded and validated using PyJWT with the provided public key and 
 
 - **Signature** -- the token was signed by the identity service's private key
 - **Expiration** -- the `exp` claim has not passed
+- **Audience** -- the `aud` claim matches the expected value (default: `"sentinel:access"`)
 - **Structure** -- the token is a well-formed JWT
+
+!!! note "Audience prevents token misuse"
+    Sentinel issues three token types with distinct audiences: `"sentinel:access"`, `"sentinel:refresh"`, and `"sentinel:admin"`. The middleware rejects any token whose `aud` doesn't match, preventing refresh or admin tokens from being used as access tokens. See [JWT Tokens — Access Token Claims](../guide/jwt.md#access-token-claims) for the full claims reference.
 
 ### 4. User Context Population
 

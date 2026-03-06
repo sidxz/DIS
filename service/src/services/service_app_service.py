@@ -49,9 +49,7 @@ async def create_service_app(
     return app, plaintext
 
 
-async def validate_key(
-    raw_key: str, db: AsyncSession
-) -> tuple[str, uuid.UUID] | None:
+async def validate_key(raw_key: str, db: AsyncSession) -> tuple[str, uuid.UUID] | None:
     """Validate a raw API key. Returns (service_name, app_id) or None."""
     sha = hashlib.sha256(raw_key.encode()).hexdigest()
 
@@ -77,9 +75,7 @@ async def validate_key(
     return None
 
 
-async def rotate_key(
-    db: AsyncSession, app_id: uuid.UUID
-) -> tuple[ServiceApp, str]:
+async def rotate_key(db: AsyncSession, app_id: uuid.UUID) -> tuple[ServiceApp, str]:
     """Rotate the API key for a service app. Returns (app, new_plaintext_key)."""
     app = await db.get(ServiceApp, app_id)
     if not app:
@@ -93,9 +89,7 @@ async def rotate_key(
 
 
 async def list_service_apps(db: AsyncSession) -> list[ServiceApp]:
-    result = await db.execute(
-        select(ServiceApp).order_by(ServiceApp.created_at.desc())
-    )
+    result = await db.execute(select(ServiceApp).order_by(ServiceApp.created_at.desc()))
     return list(result.scalars().all())
 
 

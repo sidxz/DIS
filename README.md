@@ -29,7 +29,7 @@ A lightweight authentication, workspace management, and entity-level permissions
 
 ## Documentation
 
-Full documentation at [sidxz.github.io/Sentinel/](https://sidxz.github.io/Sentinel/)
+Full documentation at [docs.sentinel-auth.com](https://docs.sentinel-auth.com)
 
 ## Architecture at a glance
 

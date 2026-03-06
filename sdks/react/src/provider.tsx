@@ -23,6 +23,7 @@ export interface SentinelAuthContextValue {
   getWorkspaces(code: string): Promise<WorkspaceOption[]>
   selectWorkspace(code: string, workspaceId: string): Promise<void>
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
+  fetchJson: <T>(input: RequestInfo | URL, init?: RequestInit) => Promise<T>
 }
 
 const SentinelAuthContext = createContext<SentinelAuthContextValue | null>(null)
@@ -78,6 +79,7 @@ export function SentinelAuthProvider({
       await client.selectWorkspace(code, workspaceId)
     },
     fetch: (input, init) => client.fetch(input, init),
+    fetchJson: <T,>(input: RequestInfo | URL, init?: RequestInit) => client.fetchJson<T>(input, init),
   }
 
   return (

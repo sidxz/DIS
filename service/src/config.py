@@ -78,5 +78,4 @@ class Settings(BaseSettings):
         return list(hosts) if hosts else ["*"]
 
 
-
 settings = Settings()

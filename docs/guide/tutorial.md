@@ -315,7 +315,7 @@ npm install @sentinel-auth/js @sentinel-auth/react react-router-dom @tanstack/re
 
 ### Initialize the auth client
 
-Create a shared `SentinelAuth` instance and an `apiFetch` wrapper that uses it for automatic Bearer token injection:
+Create a shared `SentinelAuth` instance and an `apiFetch` wrapper that uses `fetchJson` for automatic Bearer token injection, 401 retry, and JSON parsing:
 
 ```typescript
 // src/api/client.ts
@@ -332,23 +332,11 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const res = await sentinelClient.fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...((options?.headers as Record<string, string>) ?? {}),
-    },
-  });
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return sentinelClient.fetchJson<T>(`/api${path}`, options);
 }
 ```
 
-`sentinelClient.fetch()` automatically attaches the Bearer token and retries once on 401 after refreshing.
+`sentinelClient.fetchJson()` automatically attaches the Bearer token, sets `Content-Type: application/json`, retries once on 401 after refreshing, and throws with the `detail` message on error responses.
 
 ### Wrap with SentinelAuthProvider
 
@@ -436,61 +424,35 @@ export function Login() {
 
 ### OAuth callback
 
-After the IdP redirects back, the callback page receives an authorization code. Use `getWorkspaces()` to fetch available workspaces, then `selectWorkspace()` to complete the token exchange:
+After the IdP redirects back, use the SDK's `AuthCallback` component to handle the code exchange and workspace selection. It reads the `?code=` param automatically, auto-selects single workspaces, and shows a picker for multiple:
 
 ```tsx
 // src/pages/AuthCallback.tsx
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { useAuth, type WorkspaceOption } from "@sentinel-auth/react";
+import { useNavigate } from "react-router-dom";
+import { AuthCallback as SentinelCallback } from "@sentinel-auth/react";
 
 export function AuthCallback() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { getWorkspaces, selectWorkspace } = useAuth();
-  const code = searchParams.get("code");
-
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!code) return;
-
-    getWorkspaces(code).then(async (ws) => {
-      if (ws.length === 1) {
-        // Single workspace — auto-select
-        await selectWorkspace(code, ws[0].id);
-        navigate("/", { replace: true });
-        return;
-      }
-      // Multiple workspaces — show picker
-      setWorkspaces(ws);
-      setLoading(false);
-    });
-  }, [code]);
-
-  async function handleSelect(workspaceId: string) {
-    if (!code) return;
-    await selectWorkspace(code, workspaceId);
-    navigate("/", { replace: true });
-  }
-
-  if (loading) return <div>Signing you in...</div>;
 
   return (
-    <div>
-      <h2>Select Workspace</h2>
-      {workspaces.map((ws) => (
-        <button key={ws.id} onClick={() => handleSelect(ws.id)}>
-          {ws.name} ({ws.role})
-        </button>
-      ))}
-    </div>
+    <SentinelCallback
+      onSuccess={() => navigate("/notes", { replace: true })}
+      workspaceSelector={({ workspaces, onSelect, isLoading }) => (
+        <div>
+          <h2>Select Workspace</h2>
+          {workspaces.map((ws) => (
+            <button key={ws.id} onClick={() => onSelect(ws.id)} disabled={isLoading}>
+              {ws.name} ({ws.role})
+            </button>
+          ))}
+        </div>
+      )}
+    />
   );
 }
 ```
 
-The flow is: `login()` → IdP redirect → `getWorkspaces(code)` → `selectWorkspace(code, wsId)` → JWT tokens stored automatically.
+The `AuthCallback` component handles the full flow: reads the auth code from the URL, fetches workspaces, auto-selects if there's only one, and calls `onSuccess` after token exchange. Use the `workspaceSelector` render prop to customize the picker UI, and `loadingComponent`/`errorComponent` for custom loading and error states.
 
 ### Access user context
 
@@ -538,7 +500,7 @@ The role hierarchy is `viewer < editor < admin < owner` — a user with `admin` 
 
 ### Authenticated API calls
 
-Use the `apiFetch` wrapper (or `useAuthFetch()`) with React Query for data fetching:
+Use the `apiFetch` wrapper (backed by `sentinelClient.fetchJson()`) with React Query for data fetching:
 
 ```tsx
 import { useQuery } from "@tanstack/react-query";
@@ -627,11 +589,12 @@ Open [http://localhost:9101](http://localhost:9101) and sign in with Google.
 | Share resources | Grant access to other users | Permission share API |
 | Custom RBAC | Register actions, check at runtime | `require_action(client, "action")` |
 | Frontend auth | React provider + PKCE | `SentinelAuthProvider`, `useAuth()` |
-| OAuth callback | Workspace selection flow | `getWorkspaces()`, `selectWorkspace()` |
-| Authenticated fetch | Auto Bearer token + refresh | `sentinelClient.fetch()`, `useAuthFetch()` |
+| OAuth callback | SDK callback component | `AuthCallback`, `workspaceSelector` render prop |
+| Authenticated fetch | Auto Bearer token + JSON | `sentinelClient.fetchJson()`, `useAuthFetch()` |
 
 ## Next Steps
 
+- [Next.js Frontend Tutorial](tutorial-nextjs.md) — build the same app with Next.js App Router, Edge Middleware, and server helpers
 - [Python SDK Reference](../sdk/index.md) — full API documentation for all SDK modules
 - [JS SDK Reference](../js-sdk/index.md) — `@sentinel-auth/js` and `@sentinel-auth/react` API docs
 - [Integration Guide](../sdk/integration.md) — detailed 9-step integration reference

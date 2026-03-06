@@ -39,7 +39,11 @@ def build_jwks() -> dict:
     thumbprint_input = json.dumps(
         {"e": e_b64, "kty": "RSA", "n": n_b64}, separators=(",", ":"), sort_keys=True
     ).encode()
-    kid = base64.urlsafe_b64encode(hashlib.sha256(thumbprint_input).digest()).rstrip(b"=").decode("ascii")
+    kid = (
+        base64.urlsafe_b64encode(hashlib.sha256(thumbprint_input).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
 
     _jwks_cache = {
         "keys": [

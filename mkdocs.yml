@@ -94,6 +94,7 @@ nav:
   - Guide:
     - guide/index.md
     - Tutorial: guide/tutorial.md
+    - "Tutorial: Next.js Frontend": guide/tutorial-nextjs.md
     - Architecture: guide/architecture.md
     - Authentication: guide/authentication.md
     - JWT Tokens: guide/jwt.md

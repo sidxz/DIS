@@ -35,6 +35,8 @@ The Sentinel Auth issues JSON Web Tokens (JWTs) for authentication. Tokens are s
 
 | Claim | Type | Description |
 |-------|------|-------------|
+| `iss` | `string` | Issuer — the Sentinel `BASE_URL` (e.g. `http://localhost:9003`) |
+| `aud` | `string` | Audience — always `"sentinel:access"` for access tokens |
 | `sub` | `string` (UUID) | User ID |
 | `email` | `string` | User's email address |
 | `name` | `string` | User's display name |
@@ -47,12 +49,18 @@ The Sentinel Auth issues JSON Web Tokens (JWTs) for authentication. Tokens are s
 | `exp` | `number` | Expiration timestamp (Unix epoch) |
 | `type` | `string` | Always `"access"` |
 
+!!! info "Audience validation"
+    The SDK middleware and Next.js Edge Middleware both validate the `aud` claim by default. Access tokens use `"sentinel:access"`, admin tokens use `"sentinel:admin"`, and refresh tokens use `"sentinel:refresh"`. This prevents a refresh token from being used as an access token, and vice versa. If you verify tokens manually, always check the audience matches the token type you expect.
+
 ### Refresh Token Claims
 
 | Claim | Type | Description |
 |-------|------|-------------|
+| `iss` | `string` | Issuer — the Sentinel `BASE_URL` |
+| `aud` | `string` | Audience — always `"sentinel:refresh"` for refresh tokens |
 | `sub` | `string` (UUID) | User ID |
 | `jti` | `string` (UUID) | Unique token identifier (for rotation tracking) |
+| `fid` | `string` (UUID) | Family ID — shared across all rotations of a session (see [Refresh Token Rotation](#refresh-token-rotation)) |
 | `iat` | `number` | Issued-at timestamp |
 | `exp` | `number` | Expiration timestamp |
 | `type` | `string` | Always `"refresh"` |

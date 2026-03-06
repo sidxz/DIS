@@ -1,6 +1,6 @@
 {
   "name": "@sentinel-auth/nextjs",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "Sentinel Auth Next.js SDK — Edge Middleware + server helpers",
   "license": "MIT",

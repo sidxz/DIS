@@ -1261,7 +1261,9 @@ async def update_service_app(
     return app
 
 
-@router.post("/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse)
+@router.post(
+    "/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse
+)
 async def rotate_service_app_key(
     app_id: uuid.UUID,
     admin: dict = Depends(require_admin),
