@@ -46,16 +46,18 @@ GET /auth/providers
 
 ### Login
 
-Initiates the OAuth2 authorization flow by redirecting the user to the selected provider's consent screen. The `redirect_uri` must be registered on an active client app in the allowlist.
+Initiates the OAuth2 authorization flow by redirecting the user to the selected provider's consent screen. The `redirect_uri` must be registered on an active client app in the allowlist. PKCE parameters are required to bind the auth code to the initiating client.
 
 ```
-GET /auth/login/{provider}?redirect_uri=Y
+GET /auth/login/{provider}?redirect_uri=Y&code_challenge=Z&code_challenge_method=S256
 ```
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `provider` | path | string | Yes | OAuth provider name (e.g., `google`, `github`) |
 | `redirect_uri` | query | string | Yes | Redirect URI (must be registered on an active client app) |
+| `code_challenge` | query | string | Yes | PKCE code challenge (Base64url-encoded SHA-256 hash of `code_verifier`) |
+| `code_challenge_method` | query | string | No | Challenge method. Only `S256` is supported (default: `S256`) |
 
 **Response** `302 Found` -- Redirects to the provider's authorization URL.
 
@@ -133,7 +135,7 @@ GET /auth/workspaces?code=X
 
 ### Exchange Token
 
-Exchanges a single-use authorization code and workspace selection for JWT tokens. The authorization code is consumed atomically and cannot be reused.
+Exchanges a single-use authorization code and workspace selection for JWT tokens. The authorization code is consumed atomically and cannot be reused. The `code_verifier` is required for PKCE validation.
 
 ```
 POST /auth/token
@@ -144,7 +146,8 @@ POST /auth/token
 ```json
 {
   "code": "authorization_code_from_callback",
-  "workspace_id": "550e8400-e29b-41d4-a716-446655440000"
+  "workspace_id": "550e8400-e29b-41d4-a716-446655440000",
+  "code_verifier": "the_original_code_verifier_string"
 }
 ```
 
@@ -164,6 +167,7 @@ POST /auth/token
 | Code | Detail |
 |---|---|
 | `400` | `Invalid or expired authorization code` |
+| `400` | `Invalid code_verifier` (PKCE verification failed) |
 | `403` | User is not a member of the workspace |
 | `404` | `User not found` / `Workspace not found` |
 | `429` | Rate limit exceeded |
@@ -173,7 +177,7 @@ POST /auth/token
 ```bash
 curl -X POST http://localhost:9003/auth/token \
   -H "Content-Type: application/json" \
-  -d '{"code": "your_auth_code", "workspace_id": "your_workspace_id"}'
+  -d '{"code": "your_auth_code", "workspace_id": "your_workspace_id", "code_verifier": "your_code_verifier"}'
 ```
 
 ---

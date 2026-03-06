@@ -1,6 +1,6 @@
 ---
 title: Sentinel Auth
-description: Authentication, workspace management, and Zanzibar-style permissions for Python microservices
+description: Authentication, workspace management, and Zanzibar-style permissions for your applications
 ---
 
 ![Sentinel Auth](assets/images/splash.png)
@@ -49,6 +49,14 @@ Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7
 
     [:octicons-arrow-right-24: SDK reference](sdk/index.md)
 
+-   :material-language-typescript:{ .lg .middle } **JavaScript / TypeScript SDK**
+
+    ---
+
+    Three npm packages for browser, React, and Next.js. PKCE auth flow, token management, auth-aware fetch, React hooks, Edge Middleware, and server-side JWT verification.
+
+    [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
+
 -   :material-key-chain:{ .lg .middle } **Service-to-Service Auth**
 
     ---
@@ -79,28 +87,25 @@ Choose your path based on what you need to do:
 
     ---
 
-    You have a Python service and want to add authentication and permission checks using the Sentinel Auth SDK.
+    Add authentication and permission checks to your application using the Sentinel Auth SDKs.
 
-    1. Install the SDK: `pip install sentinel-auth-sdk`
-    2. Configure your service key and identity service URL
-    3. Use `PermissionClient` to check and manage permissions
-    4. Validate JWTs to extract user and workspace context
+    **Python** -- `pip install sentinel-auth-sdk` [:octicons-arrow-right-24: Python SDK](sdk/index.md)
 
-    [:octicons-arrow-right-24: SDK quickstart](sdk/index.md)
+    **JavaScript / TypeScript** -- `npm install @sentinel-auth/js` [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
 
 -   :material-server:{ .lg .middle } **I want to run the service**
 
     ---
 
-    You want to deploy the Sentinel Auth as your authentication and authorization backend.
+    Deploy Sentinel Auth as your authentication and authorization backend.
 
-    1. Clone the repository and configure `.env`
-    2. Set up PostgreSQL 16 and Redis 7
-    3. Generate RS256 key pair for JWT signing
+    1. Generate RS256 key pair for JWT signing
+    2. Create `.env` from the template
+    3. `docker compose -f docker-compose.prod.yml up -d`
     4. Register OAuth2 credentials with your identity providers
-    5. Run with `uv run uvicorn` or deploy with Docker
+    5. Register client apps and service apps via the admin panel
 
-    [:octicons-arrow-right-24: Deployment guide](getting-started/index.md)
+    [:octicons-arrow-right-24: Getting started](getting-started/index.md)
 
 </div>
 

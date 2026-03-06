@@ -16,7 +16,7 @@ The RBAC system works alongside workspace roles and entity ACLs:
 from sentinel_auth.roles import RoleClient
 
 roles = RoleClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 )
@@ -36,7 +36,7 @@ The client manages an internal `httpx.AsyncClient`. Use it as an async context m
 
 ```python
 async with RoleClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 ) as client:
@@ -51,7 +51,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.roles = RoleClient(
-        base_url="http://identity-service:8000",
+        base_url="http://identity-service:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )

@@ -1,20 +1,56 @@
 # Service-to-Service Authentication
 
-Consuming applications authenticate with the Identity Service using the `X-Service-Key` header. This mechanism ensures that only authorized backend services can call permission endpoints, while also allowing the service to identify which application is making the request.
+Consuming applications authenticate with the Identity Service using the `X-Service-Key` header. This mechanism ensures that only authorized backend services can call permission and role endpoints, while also identifying which application is making the request.
+
+## Service Apps
+
+Service API keys are managed through the **service apps** system, not environment variables. Each service app is created via the admin panel (`/admin/service-apps`) or admin API and is bound to a specific `service_name`.
+
+When a service app is created, a plaintext API key (prefixed with `sk_`) is returned **once**. The key is stored as a SHA-256 hash and cannot be retrieved again. Use the key in the `X-Service-Key` header:
+
+```
+X-Service-Key: sk_a1b2c3d4e5f6...
+```
+
+The Identity Service validates the key by hashing it and matching against active service apps via `service_app_service.validate_key()`. If the key is missing, invalid, or belongs to an inactive app, the request is rejected with `401 Unauthorized`.
+
+### Service App Fields
+
+| Field | Description |
+|-------|-------------|
+| `name` | Human-readable label for the application |
+| `service_name` | The service this key is scoped to (e.g., `"docu-store"`) |
+| `key_hash` | SHA-256 hash of the plaintext key |
+| `key_prefix` | First few characters for identification (e.g., `sk_a1b2****`) |
+| `is_active` | Can be deactivated to block requests without deleting |
+| `last_used_at` | Timestamp of last successful validation |
+
+### Managing Service Apps
+
+```
+POST   /admin/service-apps              # Create (returns plaintext key once)
+GET    /admin/service-apps              # List all
+GET    /admin/service-apps/{id}         # Get one
+PATCH  /admin/service-apps/{id}         # Update name or is_active
+DELETE /admin/service-apps/{id}         # Delete
+POST   /admin/service-apps/{id}/rotate-key  # Rotate key (returns new plaintext key)
+```
 
 ## X-Service-Key Header
 
-Every request to the `/permissions/*` endpoints must include a valid service API key:
+Every request to the `/permissions/*` and `/roles/*` endpoints must include a valid service API key:
 
 ```
-X-Service-Key: your-secret-key-here
+X-Service-Key: sk_a1b2c3d4e5f6...
 ```
 
-The Identity Service validates the key against the configured set of allowed keys. If the key is missing or invalid, the request is rejected with `401 Unauthorized`.
+### Service Name Scoping
+
+Each key is bound to a `service_name`. The `verify_service_scope()` dependency ensures the key is authorized for the service being accessed. For example, a key created for `"docu-store"` cannot be used to register actions for `"analytics"`.
 
 ## Auth Tiers
 
-Permission endpoints use two authentication tiers depending on the operation:
+Permission and role endpoints use two authentication tiers depending on the operation:
 
 | Tier | Authentication Required | Endpoints |
 |------|------------------------|-----------|
@@ -34,7 +70,7 @@ Example request:
 
 ```bash
 curl -X POST https://identity.example.com/permissions/check \
-  -H "X-Service-Key: sk_live_abc123" \
+  -H "X-Service-Key: sk_a1b2c3d4e5f6..." \
   -H "Authorization: Bearer eyJhbGciOi..." \
   -H "Content-Type: application/json" \
   -d '{
@@ -55,7 +91,7 @@ Example request:
 
 ```bash
 curl -X POST https://identity.example.com/permissions/register \
-  -H "X-Service-Key: sk_live_abc123" \
+  -H "X-Service-Key: sk_a1b2c3d4e5f6..." \
   -H "Content-Type: application/json" \
   -d '{
     "service_name": "docu-store",
@@ -69,64 +105,66 @@ curl -X POST https://identity.example.com/permissions/register \
 
 ## Dev Mode
 
-When the `SERVICE_API_KEYS` environment variable is empty (the default), the service key requirement is disabled entirely. All requests pass through the `require_service_key` dependency without validation.
+When no active service apps exist in the database (the default for a fresh installation), the service key requirement is disabled entirely. All requests pass through the `require_service_key` dependency without validation.
 
-This makes local development easier -- you do not need to configure service keys to test permission endpoints.
+This makes local development easier -- you do not need to create service apps to test permission endpoints.
 
-```
-# .env (development)
-SERVICE_API_KEYS=
-
-# .env (production)
-SERVICE_API_KEYS=sk_live_abc123,sk_live_def456
-```
-
-**Important**: In production, always set `SERVICE_API_KEYS` to a non-empty comma-separated list of valid keys. An empty value means no enforcement, which effectively disables service authentication.
+**Important**: In production, always register at least one service app via the admin panel. Having zero active service apps means no enforcement, which effectively disables service authentication.
 
 ## Production Configuration
 
-### Generating Keys
+### Creating a Service App
 
-Generate a cryptographically secure API key:
+1. Log in to the admin panel at `{ADMIN_URL}`
+2. Navigate to **Service Apps**
+3. Click **Create Service App** and provide a name and service name
+4. Copy the plaintext key from the response -- it is shown only once
+
+Or via the admin API:
 
 ```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
+curl -X POST https://identity.example.com/admin/service-apps \
+  -H "Cookie: admin_token=..." \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Docu-Store Production", "service_name": "docu-store"}'
 ```
 
-This produces a 43-character URL-safe string like `dBjftJeZ4CVP-mB92pU4hQVOs0w7Iq6pHqg_8RbYFVc`.
+The response includes the plaintext key:
 
-### Configuring Multiple Keys
-
-Multiple keys are separated by commas. This allows key rotation without downtime -- add the new key, deploy to all services, then remove the old key.
-
+```json
+{
+  "id": "...",
+  "name": "Docu-Store Production",
+  "service_name": "docu-store",
+  "key_prefix": "sk_a1b2****",
+  "key": "sk_a1b2c3d4e5f6g7h8..."
+}
 ```
-SERVICE_API_KEYS=sk_live_abc123,sk_live_def456
-```
 
-### Key Rotation Procedure
+### Key Rotation
 
-1. Generate a new key.
-2. Add it to `SERVICE_API_KEYS` alongside the existing key: `SERVICE_API_KEYS=old_key,new_key`.
-3. Deploy the Identity Service with both keys active.
-4. Update all consuming services to use the new key.
-5. Remove the old key: `SERVICE_API_KEYS=new_key`.
-6. Deploy the Identity Service again.
+Rotate a key without downtime:
+
+1. Call `POST /admin/service-apps/{id}/rotate-key` to generate a new key (the old key is immediately invalidated)
+2. Update all consuming services to use the new key
+
+For zero-downtime rotation, create a second service app with the same `service_name`, update consuming services, then deactivate the old app.
 
 ## SDK Integration
 
-The Python SDK's `PermissionClient` handles service key headers automatically:
+The Python SDK's `PermissionClient` and `RoleClient` handle service key headers automatically:
 
 ```python
-from sentinel_auth import PermissionClient
+from sentinel_auth.permissions import PermissionClient
 
 client = PermissionClient(
     base_url="https://identity.example.com",
     service_name="docu-store",
-    service_key="sk_live_abc123",
+    service_key="sk_a1b2c3d4e5f6...",
 )
 
 # Dual auth: pass the user's JWT token
-result = client.check_permission(
+result = await client.can(
     token="user-jwt-here",
     resource_type="document",
     resource_id="doc-uuid",
@@ -134,7 +172,7 @@ result = client.check_permission(
 )
 
 # Service-only: no token needed
-client.register_resource(
+await client.register_resource(
     resource_type="document",
     resource_id="new-doc-uuid",
     workspace_id="workspace-uuid",

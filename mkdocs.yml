@@ -103,7 +103,7 @@ nav:
     - Roles: guide/roles.md
     - Service Auth: guide/service-auth.md
     - Admin Panel: guide/admin.md
-  - SDK:
+  - Python SDK:
     - sdk/index.md
     - Installation: sdk/installation.md
     - Middleware: sdk/middleware.md
@@ -112,6 +112,13 @@ nav:
     - Role Client: sdk/role-client.md
     - Integration Guide: sdk/integration.md
     - Examples: sdk/examples.md
+  - JS/TS SDK:
+    - js-sdk/index.md
+    - Installation: js-sdk/installation.md
+    - Auth Client: js-sdk/auth-client.md
+    - React Integration: js-sdk/react.md
+    - Next.js Integration: js-sdk/nextjs.md
+    - Server Utilities: js-sdk/server.md
   - API Reference:
     - api/index.md
     - Auth: api/auth.md

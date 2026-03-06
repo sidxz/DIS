@@ -39,9 +39,6 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "sentinel-auth-sdk",
 ]
-
-[tool.uv.sources]
-sentinel-auth-sdk = { path = "../../sdk", editable = true }
 ```
 
 Install:
@@ -51,26 +48,56 @@ cd demo/backend
 uv sync
 ```
 
+!!! tip "Editable installs for SDK development"
+    If you're working on the SDK itself and want changes reflected immediately, add a `[tool.uv.sources]` section pointing to your local SDK checkout:
+
+    ```toml
+    [tool.uv.sources]
+    sentinel-auth-sdk = { path = "../../sdk", editable = true }
+    ```
+
 ## Step 2: Add JWT Middleware
 
 The `JWTAuthMiddleware` validates Bearer tokens on every request and populates `request.state.user` with an `AuthenticatedUser` object.
 
-```python
-# src/main.py
-from fastapi import FastAPI
-from sentinel_auth.middleware import JWTAuthMiddleware
-from src.config import settings
+=== "JWKS URL (recommended)"
 
-PUBLIC_KEY = settings.public_key_path.read_text()
+    Use the JWKS endpoint for automatic key discovery and rotation — no need to distribute PEM files:
 
-app = FastAPI(title="Team Notes")
+    ```python
+    # src/main.py
+    from fastapi import FastAPI
+    from sentinel_auth.middleware import JWTAuthMiddleware
 
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=PUBLIC_KEY,
-    exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
-)
-```
+    app = FastAPI(title="Team Notes")
+
+    app.add_middleware(
+        JWTAuthMiddleware,
+        jwks_url="http://localhost:9003/.well-known/jwks.json",
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    )
+    ```
+
+=== "PEM file"
+
+    Load the public key directly from the filesystem:
+
+    ```python
+    # src/main.py
+    from fastapi import FastAPI
+    from sentinel_auth.middleware import JWTAuthMiddleware
+    from src.config import settings
+
+    PUBLIC_KEY = settings.public_key_path.read_text()
+
+    app = FastAPI(title="Team Notes")
+
+    app.add_middleware(
+        JWTAuthMiddleware,
+        public_key=PUBLIC_KEY,
+        exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"],
+    )
+    ```
 
 After this, every request (except excluded paths) must include a valid `Authorization: Bearer <token>` header.
 
@@ -277,54 +304,315 @@ An admin must create a role with the `notes:export` action and assign it to user
 
 ## Step 10: Build the Frontend
 
-The demo frontend is a React SPA that handles OAuth login through the identity service.
+The frontend uses `@sentinel-auth/react` which handles the full OAuth + PKCE flow, token storage, automatic refresh, and authenticated API calls.
 
-### Auth Flow
+### Install dependencies
 
-1. User clicks "Sign in with Google" → navigates to `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9101/auth/callback`
-2. After OAuth, identity service redirects to `http://localhost:9101/auth/callback?code=X`
-3. Frontend fetches the user's workspaces: `GET /auth/workspaces?code=X`
-4. User selects a workspace → `POST /auth/token` with `{code, workspace_id}` exchanges for JWT tokens (code is single-use)
-5. Tokens stored in localStorage, attached to all API calls
+```bash
+cd demo/frontend
+npm install @sentinel-auth/js @sentinel-auth/react react-router-dom @tanstack/react-query
+```
 
-!!! note "Client app registration"
-    The demo app must be registered as a client app in the identity service before login will work. Create one via the admin API (`POST /admin/client-apps`) with `redirect_uris: ["http://localhost:9101/auth/callback"]`.
+### Initialize the auth client
 
-### Token Management
+Create a shared `SentinelAuth` instance and an `apiFetch` wrapper that uses it for automatic Bearer token injection:
 
 ```typescript
-// Attach token to every request
-const token = localStorage.getItem("access_token");
-const res = await fetch(`/api/notes`, {
-    headers: { Authorization: `Bearer ${token}` },
+// src/api/client.ts
+import { SentinelAuth } from "@sentinel-auth/js";
+
+const SENTINEL_URL =
+  import.meta.env.VITE_SENTINEL_URL || "http://localhost:9003";
+
+export const sentinelClient = new SentinelAuth({
+  sentinelUrl: SENTINEL_URL,
 });
 
-// Auto-refresh on 401
-if (res.status === 401) {
-    const refreshed = await tryRefresh();
-    if (refreshed) return retry();
-    // redirect to login
+export async function apiFetch<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
+  const res = await sentinelClient.fetch(`/api${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...((options?.headers as Record<string, string>) ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
 }
 ```
 
-### Identity Service Config
+`sentinelClient.fetch()` automatically attaches the Bearer token and retries once on 401 after refreshing.
 
-Register the demo app as a client app with `redirect_uris: ["http://localhost:9101/auth/callback"]`. This adds the demo app's redirect URI to the allowlist, permitting it to initiate OAuth flows through Sentinel.
+### Wrap with SentinelAuthProvider
 
-## Step 11: Run Everything
+Pass the shared client into the React provider so all hooks can access it:
 
-```bash
-# Terminal 1: Identity service infrastructure
-make infra && make start
+```tsx
+// src/main.tsx
+import { SentinelAuthProvider } from "@sentinel-auth/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
+import App from "./App";
+import { sentinelClient } from "./api/client";
 
-# Terminal 2: Demo backend
-cd demo/backend && uv run python -m src.main
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+});
 
-# Terminal 3: Demo frontend
-cd demo/frontend && npm run dev
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <SentinelAuthProvider client={sentinelClient}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </SentinelAuthProvider>
+  </StrictMode>,
+);
 ```
 
-Open [http://localhost:9101](http://localhost:9101) and sign in.
+### Use AuthGuard
+
+Protect authenticated routes with `AuthGuard`. The `/auth/callback` route must stay **outside** the guard since the user isn't authenticated yet:
+
+```tsx
+// src/App.tsx
+import { AuthGuard } from "@sentinel-auth/react";
+import { Route, Routes } from "react-router-dom";
+import { AuthCallback } from "./pages/AuthCallback";
+import { Login } from "./pages/Login";
+import { NoteList } from "./pages/NoteList";
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route
+        path="*"
+        element={
+          <AuthGuard
+            fallback={<Login />}
+            loading={<div>Loading...</div>}
+          >
+            <Routes>
+              <Route path="/" element={<NoteList />} />
+            </Routes>
+          </AuthGuard>
+        }
+      />
+    </Routes>
+  );
+}
+```
+
+### Login page
+
+Call `login("google")` to start the OAuth flow. PKCE challenge generation and the redirect to Sentinel are handled automatically:
+
+```tsx
+// src/pages/Login.tsx
+import { useAuth } from "@sentinel-auth/react";
+
+export function Login() {
+  const { login } = useAuth();
+
+  return (
+    <button onClick={() => login("google")}>
+      Sign in with Google
+    </button>
+  );
+}
+```
+
+### OAuth callback
+
+After the IdP redirects back, the callback page receives an authorization code. Use `getWorkspaces()` to fetch available workspaces, then `selectWorkspace()` to complete the token exchange:
+
+```tsx
+// src/pages/AuthCallback.tsx
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth, type WorkspaceOption } from "@sentinel-auth/react";
+
+export function AuthCallback() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { getWorkspaces, selectWorkspace } = useAuth();
+  const code = searchParams.get("code");
+
+  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!code) return;
+
+    getWorkspaces(code).then(async (ws) => {
+      if (ws.length === 1) {
+        // Single workspace — auto-select
+        await selectWorkspace(code, ws[0].id);
+        navigate("/", { replace: true });
+        return;
+      }
+      // Multiple workspaces — show picker
+      setWorkspaces(ws);
+      setLoading(false);
+    });
+  }, [code]);
+
+  async function handleSelect(workspaceId: string) {
+    if (!code) return;
+    await selectWorkspace(code, workspaceId);
+    navigate("/", { replace: true });
+  }
+
+  if (loading) return <div>Signing you in...</div>;
+
+  return (
+    <div>
+      <h2>Select Workspace</h2>
+      {workspaces.map((ws) => (
+        <button key={ws.id} onClick={() => handleSelect(ws.id)}>
+          {ws.name} ({ws.role})
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+The flow is: `login()` → IdP redirect → `getWorkspaces(code)` → `selectWorkspace(code, wsId)` → JWT tokens stored automatically.
+
+### Access user context
+
+Use `useUser()` in any component inside `AuthGuard` to access the authenticated user:
+
+```tsx
+import { useUser, useAuth } from "@sentinel-auth/react";
+
+function Layout({ children }) {
+  const user = useUser();
+  const { logout } = useAuth();
+
+  return (
+    <div>
+      <nav>
+        <span>{user.name} — {user.workspaceSlug} ({user.workspaceRole})</span>
+        <button onClick={logout}>Logout</button>
+      </nav>
+      {children}
+    </div>
+  );
+}
+```
+
+### Check roles
+
+Use `useHasRole()` for conditional UI based on workspace roles:
+
+```tsx
+import { useHasRole } from "@sentinel-auth/react";
+
+function NoteList() {
+  const canCreate = useHasRole("editor");
+
+  return (
+    <div>
+      {canCreate && <button>New Note</button>}
+      {/* ... */}
+    </div>
+  );
+}
+```
+
+The role hierarchy is `viewer < editor < admin < owner` — a user with `admin` role passes `useHasRole("editor")`.
+
+### Authenticated API calls
+
+Use the `apiFetch` wrapper (or `useAuthFetch()`) with React Query for data fetching:
+
+```tsx
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "../api/client";
+
+function NoteList() {
+  const { data: notes } = useQuery({
+    queryKey: ["notes"],
+    queryFn: () => apiFetch<Note[]>("/notes"),
+  });
+
+  return (
+    <ul>
+      {notes?.map((note) => (
+        <li key={note.id}>{note.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+## Step 11: Configure and Run
+
+### Register the client app
+
+Before the frontend can authenticate, register it as a client app in Sentinel with its callback URL.
+
+In the admin panel, go to **Client Apps** → **Add Client App** and add:
+
+- **Name**: `team-notes-frontend`
+- **Redirect URIs**: `http://localhost:9101/auth/callback`
+
+### Register the service app
+
+The demo backend needs a service key to call Sentinel's permission and role APIs.
+
+In the admin panel, go to **Service Apps** → **Add Service App**:
+
+- **Name**: `team-notes-backend`
+- Toggle **Dev Mode** on
+
+Copy the generated `sk_...` key and add it to the backend's `.env`:
+
+```dotenv
+SENTINEL_SERVICE_KEY=sk_...
+```
+
+### Start the services
+
+=== "Docker (Sentinel)"
+
+    ```bash
+    # Sentinel is already running via Docker
+    # Demo backend
+    cd demo/backend && uv sync && uv run python -m src.main
+
+    # Demo frontend (in another terminal)
+    cd demo/frontend && npm install && npm run dev
+    ```
+
+=== "From Source"
+
+    ```bash
+    # Terminal 1: Sentinel
+    make infra && make start
+
+    # Terminal 2: Demo backend
+    cd demo/backend && uv sync && uv run python -m src.main
+
+    # Terminal 3: Demo frontend
+    cd demo/frontend && npm install && npm run dev
+    ```
+
+Open [http://localhost:9101](http://localhost:9101) and sign in with Google.
 
 ## Summary
 
@@ -338,9 +626,13 @@ Open [http://localhost:9101](http://localhost:9101) and sign in.
 | Check entity access | Per-resource permission check | `permissions.can()` |
 | Share resources | Grant access to other users | Permission share API |
 | Custom RBAC | Register actions, check at runtime | `require_action(client, "action")` |
+| Frontend auth | React provider + PKCE | `SentinelAuthProvider`, `useAuth()` |
+| OAuth callback | Workspace selection flow | `getWorkspaces()`, `selectWorkspace()` |
+| Authenticated fetch | Auto Bearer token + refresh | `sentinelClient.fetch()`, `useAuthFetch()` |
 
 ## Next Steps
 
-- [SDK Reference](../sdk/index.md) — full API documentation for all SDK modules
+- [Python SDK Reference](../sdk/index.md) — full API documentation for all SDK modules
+- [JS SDK Reference](../js-sdk/index.md) — `@sentinel-auth/js` and `@sentinel-auth/react` API docs
 - [Integration Guide](../sdk/integration.md) — detailed 9-step integration reference
 - [Examples](../sdk/examples.md) — common patterns and recipes

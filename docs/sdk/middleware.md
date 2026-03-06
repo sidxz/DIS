@@ -4,6 +4,8 @@ The `JWTAuthMiddleware` is a Starlette middleware that validates JWT access toke
 
 ## Setup
 
+### Using a PEM public key
+
 ```python
 from pathlib import Path
 
@@ -21,11 +23,30 @@ app.add_middleware(
 )
 ```
 
+### Using JWKS auto-discovery (recommended)
+
+```python
+from fastapi import FastAPI
+from sentinel_auth.middleware import JWTAuthMiddleware
+
+app = FastAPI()
+
+app.add_middleware(
+    JWTAuthMiddleware,
+    jwks_url="https://identity.example.com/.well-known/jwks.json",
+    exclude_paths=["/health", "/docs", "/openapi.json"],
+)
+```
+
+The JWKS URL is fetched lazily on the first request and cached. This avoids the need to distribute PEM files and supports automatic key rotation.
+
 ## Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `public_key` | `str` | *required* | RSA public key in PEM format. Used to verify RS256 JWT signatures. Obtain this from the identity service's `keys/public.pem`. |
+| `public_key` | `str \| None` | `None` | RSA public key in PEM format. Used to verify RS256 JWT signatures. Obtain this from the identity service's `keys/public.pem`. Either `public_key` or `jwks_url` must be provided. |
+| `jwks_url` | `str \| None` | `None` | URL to a JWKS endpoint for auto-discovery of the signing key. The key is fetched lazily on first request and cached. Either `public_key` or `jwks_url` must be provided. |
+| `audience` | `str` | `"sentinel:access"` | Expected `aud` claim in the JWT. Tokens with a different audience are rejected. |
 | `algorithm` | `str` | `"RS256"` | JWT signing algorithm. Must match the identity service's signing configuration. |
 | `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | List of path prefixes that bypass authentication. Any request whose path starts with one of these strings is passed through without token validation. |
 | `allowed_workspaces` | `set[str] \| None` | `None` | Optional set of workspace IDs permitted to access this service. `None` allows all workspaces. If set, requests with a workspace ID not in the set receive a 403 response. |

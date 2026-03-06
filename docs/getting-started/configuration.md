@@ -29,6 +29,7 @@ cp .env.example .env
 | `JWT_ALGORITHM` | `str` | `RS256` | Signing algorithm. Only `RS256` is supported. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `int` | `15` | Access token lifetime in minutes. |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `int` | `7` | Refresh token lifetime in days. |
+| `ADMIN_TOKEN_EXPIRE_MINUTES` | `int` | `60` | Admin token lifetime in minutes. |
 
 !!! tip "Key generation"
     Generate a key pair with:
@@ -89,10 +90,9 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SESSION_SECRET_KEY` | `str` | `dev-only-change-me-in-production` | Secret key for signing server-side sessions used during OAuth flows. |
-| `CORS_ORIGINS` | `str` | `http://localhost:3000` | Comma-separated list of allowed CORS origins. |
+| `CORS_ORIGINS` | `str` | `http://localhost:3000,http://localhost:9101` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. |
 | `COOKIE_SECURE` | `bool` | `false` | Set to `true` in production to mark cookies as `Secure` (requires HTTPS). |
-| `ALLOWED_HOSTS` | `str` | `*` | Comma-separated list of allowed hostnames. `*` allows all (development only). |
-| `SERVICE_API_KEYS` | `str` | *(empty)* | Comma-separated list of valid service API keys. When empty, service-key auth is not enforced (development only). |
+| `ALLOWED_HOSTS` | `str` | *(empty)* | Derived from `BASE_URL` and `ADMIN_URL` hostnames. Falls back to `*` (allow all) only if no hostnames found. Override with comma-separated hostnames. |
 
 !!! danger "Production security checklist"
     Before deploying to production, you **must**:
@@ -100,16 +100,18 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
     - Set `SESSION_SECRET_KEY` to a unique, random value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
     - Set `COOKIE_SECURE=true` (your deployment must use HTTPS)
     - Set `ALLOWED_HOSTS` to your actual domain(s)
-    - Set `SERVICE_API_KEYS` to one or more strong, random keys
+    - Register at least one service app via the admin panel (`/admin/service-apps`)
     - Restrict `CORS_ORIGINS` to your frontend domain(s)
 
 !!! info "Comma-separated values"
-    `CORS_ORIGINS`, `ALLOWED_HOSTS`, and `SERVICE_API_KEYS` all accept multiple values separated by commas:
+    `CORS_ORIGINS` and `ALLOWED_HOSTS` accept multiple values separated by commas:
     ```dotenv
     CORS_ORIGINS=https://app.example.com,https://admin.example.com
     ALLOWED_HOSTS=api.example.com,identity.example.com
-    SERVICE_API_KEYS=key-one-here,key-two-here
     ```
+
+!!! note "Service API keys"
+    Service API keys are no longer configured via environment variables. They are managed through the admin panel under **Service Apps** (`/admin/service-apps`). Each key is scoped to a `service_name` and stored as a SHA-256 hash. See the [Service Authentication guide](../guide/service-auth.md) for details.
 
 ---
 

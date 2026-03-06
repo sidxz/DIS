@@ -321,7 +321,7 @@ from sentinel_auth.permissions import PermissionClient
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.permissions = PermissionClient(
-        base_url="http://identity-service:8000",
+        base_url="http://identity-service:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -374,7 +374,7 @@ services:
     networks:
       - backend
     ports:
-      - "8100:8000"
+      - "9003:9003"
     volumes:
       - identity-keys:/app/keys
 
@@ -383,9 +383,9 @@ services:
     networks:
       - backend
     ports:
-      - "8200:8000"
+      - "8200:8200"
     environment:
-      IDENTITY_SERVICE_URL: "http://identity-service:8000"
+      IDENTITY_SERVICE_URL: "http://identity-service:9003"
       IDENTITY_SERVICE_KEY: "sk_my_service_key"
     volumes:
       - identity-keys:/app/keys:ro

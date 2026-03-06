@@ -15,7 +15,7 @@ The permission system works alongside workspace roles:
 from sentinel_auth.permissions import PermissionClient
 
 permissions = PermissionClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 )
@@ -35,7 +35,7 @@ The client manages an internal `httpx.AsyncClient`. Use it as an async context m
 
 ```python
 async with PermissionClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 ) as client:
@@ -52,7 +52,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.permissions = PermissionClient(
-        base_url="http://identity-service:8000",
+        base_url="http://identity-service:9003",
         service_name="my-service",
         service_key="sk_my_service_key",
     )
@@ -200,7 +200,7 @@ async def register_resource(
 | `resource_id` | `UUID` | *required* | Unique identifier of the resource |
 | `workspace_id` | `UUID` | *required* | Workspace the resource belongs to |
 | `owner_id` | `UUID` | *required* | User ID of the resource owner |
-| `visibility` | `str` | `"workspace"` | Visibility level -- `"private"`, `"workspace"`, or `"public"` |
+| `visibility` | `str` | `"workspace"` | Visibility level -- `"private"` or `"workspace"` |
 
 **Visibility levels:**
 
@@ -208,7 +208,6 @@ async def register_resource(
 |-------|---------------|
 | `"private"` | Only the owner and explicitly shared users |
 | `"workspace"` | All members of the workspace (default) |
-| `"public"` | Anyone with the link |
 
 **Returns:** The registered resource metadata as a dict.
 
@@ -338,7 +337,7 @@ The client uses a default timeout of 5 seconds. The underlying `httpx.AsyncClien
 import httpx
 
 client = PermissionClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_key",
 )
