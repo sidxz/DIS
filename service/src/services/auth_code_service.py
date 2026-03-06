@@ -56,9 +56,10 @@ def verify_code_challenge(code_verifier: str, code_challenge: str, method: str) 
     """Verify PKCE code_verifier against stored code_challenge."""
     import base64
     import hashlib
+    import hmac
 
     if method != "S256":
         return False
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
-    return computed == code_challenge
+    return hmac.compare_digest(computed, code_challenge)
