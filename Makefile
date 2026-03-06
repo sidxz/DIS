@@ -65,10 +65,11 @@ setup: ## One-time setup: keys, TLS certs, env files, deps, dev containers
 	@echo ""
 	@echo "Setup complete!"
 	@echo ""
-	@echo "  Dev:"
-	@echo "    make start   — start identity service (:9003)"
-	@echo "    make admin   — start admin UI (:9004)"
-	@echo "    make seed    — populate with test data (optional)"
+	@echo "  Next:"
+	@echo "    1. vim service/.env   — add OAuth creds (GOOGLE_*, GITHUB_*, etc.) + ADMIN_EMAILS"
+	@echo "    2. make start         — start identity service (:9003)"
+	@echo "    3. make admin         — start admin UI (:9004)"
+	@echo "    make seed             — populate with test data (optional)"
 	@echo ""
 	@echo "  Prod:"
 	@echo "    vim .env.prod   — set BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS"
@@ -108,8 +109,9 @@ docs-serve: ## Serve documentation site with live reload
 clean: ## Stop containers and wipe database
 	docker compose down -v
 
-nuke: clean ## Full reset: wipe everything including deps and keys
-	rm -rf keys/ .venv service/.venv sdk/.venv admin/node_modules
+nuke: clean ## Full reset: wipe everything including deps, keys, and env files
+	rm -rf keys/ .venv service/.venv sdk/.venv admin/node_modules sdks/*/node_modules
+	rm -f service/.env .env.prod
 	@echo "Run 'make setup' to start fresh."
 
 release: ## Release all packages (usage: make release VERSION=0.6.0)
