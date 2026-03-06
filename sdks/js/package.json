@@ -1,9 +1,14 @@
 {
   "name": "@sentinel-auth/js",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Sentinel Auth SDK for JavaScript/TypeScript — browser auth client & server utilities",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sidxz/Sentinel",
+    "directory": "sdks/js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
