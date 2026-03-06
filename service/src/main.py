@@ -69,6 +69,19 @@ async def lifespan(app: FastAPI):
     async with AsyncSession(db_engine) as db:
         _no_service_apps = not await service_app_service.has_active_apps(db)
 
+    # Redis connectivity and auth check
+    _redis_down = False
+    _redis_no_auth = False
+    try:
+        from src.services.token_service import get_redis
+
+        r = await get_redis()
+        await r.ping()
+        if "@" not in settings.redis_url:
+            _redis_no_auth = True
+    except Exception:
+        _redis_down = True
+
     if not settings.debug:
         errors = []
         if _insecure_session:
@@ -79,6 +92,14 @@ async def lifespan(app: FastAPI):
             )
         if _insecure_cookie:
             errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
+        if _redis_down:
+            errors.append(
+                "Redis is unreachable — auth codes, refresh tokens, and denylist will fail"
+            )
+        if _redis_no_auth:
+            errors.append(
+                "Redis URL has no authentication — set a password in REDIS_URL (redis://:password@host:port/db)"
+            )
         if errors:
             for e in errors:
                 logger.critical(e)
@@ -98,6 +119,12 @@ async def lifespan(app: FastAPI):
         if _insecure_cookie:
             logger.warning(
                 "COOKIE_SECURE is False — admin cookies will be sent over HTTP"
+            )
+        if _redis_down:
+            logger.warning("Redis is unreachable — some features will not work")
+        if _redis_no_auth:
+            logger.warning(
+                "Redis URL has no authentication — use redis://:password@host in production"
             )
 
     app.state.start_time = time.time()
@@ -124,7 +151,12 @@ app.add_middleware(GlobalRateLimitMiddleware, requests_per_minute=30)
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
 
 # Session middleware required by Authlib for OAuth2 state
-app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret_key,
+    https_only=settings.cookie_secure,
+    same_site="lax",
+)
 
 # Trusted host validation (prevents Host header attacks)
 if "*" not in settings.allowed_hosts_list:
