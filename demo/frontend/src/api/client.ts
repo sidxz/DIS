@@ -1,64 +1,20 @@
-const IDENTITY_URL = "http://localhost:9003";
+import { SentinelAuth } from "@sentinel-auth/js";
 
-export function getToken(): string | null {
-  return localStorage.getItem("access_token");
-}
+const SENTINEL_URL =
+  import.meta.env.VITE_SENTINEL_URL || "http://localhost:9003";
 
-export function setTokens(access: string, refresh: string) {
-  localStorage.setItem("access_token", access);
-  localStorage.setItem("refresh_token", refresh);
-}
+/** Shared SentinelAuth client instance used by both the React provider and apiFetch. */
+export const sentinelClient = new SentinelAuth({
+  sentinelUrl: SENTINEL_URL,
+});
 
-export function clearTokens() {
-  localStorage.removeItem("access_token");
-  localStorage.removeItem("refresh_token");
-}
-
-async function tryRefresh(): Promise<boolean> {
-  const refreshToken = localStorage.getItem("refresh_token");
-  if (!refreshToken) return false;
-  try {
-    const res = await fetch(`${IDENTITY_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    setTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
+/**
+ * Fetch wrapper for the demo backend API.
+ * Uses SentinelAuth's fetchJson for automatic Bearer token injection, 401 retry, and JSON parsing.
+ */
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
-  const token = getToken();
-  const res = await fetch(`/api${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options?.headers,
-    },
-  });
-
-  if (res.status === 401) {
-    const refreshed = await tryRefresh();
-    if (refreshed) return apiFetch(path, options);
-    clearTokens();
-    window.location.href = "/";
-    throw new Error("Session expired");
-  }
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return sentinelClient.fetchJson<T>(`/api${path}`, options);
 }
-
-export { IDENTITY_URL };

@@ -61,7 +61,7 @@ async def update_group(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     return await group_service.update_group(
-        db, group_id, name=body.name, description=body.description
+        db, group_id, workspace_id, name=body.name, description=body.description
     )
 
 
@@ -74,7 +74,7 @@ async def delete_group(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    await group_service.delete_group(db, group_id)
+    await group_service.delete_group(db, group_id, workspace_id)
 
 
 @router.post("/{group_id}/members/{member_user_id}", status_code=201)
@@ -87,7 +87,7 @@ async def add_group_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    await group_service.add_member(db, group_id, member_user_id)
+    await group_service.add_member(db, group_id, workspace_id, member_user_id)
     return {"status": "ok"}
 
 
@@ -101,4 +101,4 @@ async def remove_group_member(
 ):
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
-    await group_service.remove_member(db, group_id, member_user_id)
+    await group_service.remove_member(db, group_id, workspace_id, member_user_id)

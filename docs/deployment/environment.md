@@ -9,9 +9,11 @@ These variables have insecure defaults and must be explicitly set in any non-dev
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SESSION_SECRET_KEY` | Signs OAuth2 state cookies. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"` | `dev-only-change-me-in-production` |
-| `SERVICE_API_KEYS` | Comma-separated list of valid service API keys. Empty disables enforcement. | `""` (disabled) |
 | `COOKIE_SECURE` | Set `true` to add the `Secure` flag to cookies (requires HTTPS). | `false` |
-| `ALLOWED_HOSTS` | Comma-separated hostnames for the TrustedHost middleware. `*` allows all. | `*` |
+| `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. | `""` (derived) |
+
+!!! note "Service API keys"
+    Service API keys are managed via the admin panel (`/admin/service-apps`), not environment variables. Register at least one service app before deploying to production.
 
 ## Database
 
@@ -83,10 +85,9 @@ Configure at least one provider to enable user login. Leave a provider's variabl
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CORS_ORIGINS` | Comma-separated list of allowed CORS origins. | `http://localhost:3000` |
+| `CORS_ORIGINS` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. | `http://localhost:3000,http://localhost:9101` |
 | `COOKIE_SECURE` | Whether cookies require HTTPS. | `false` |
-| `ALLOWED_HOSTS` | Comma-separated allowed `Host` header values. `*` disables checking. | `*` |
-| `SERVICE_API_KEYS` | Comma-separated valid service API keys for inter-service auth. | `""` |
+| `ALLOWED_HOSTS` | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Override with comma-separated hostnames. Falls back to `*` if no hostnames found. | `""` (derived) |
 
 ## Admin
 

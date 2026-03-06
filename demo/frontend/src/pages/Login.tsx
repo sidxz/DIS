@@ -1,6 +1,8 @@
-import { loginWithGoogle } from "../api/auth";
+import { useAuth } from "@sentinel-auth/react";
 
 export function Login() {
+  const { login } = useAuth();
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950">
       <div className="w-full max-w-sm space-y-6 text-center">
@@ -18,7 +20,7 @@ export function Login() {
             permissions.
           </p>
           <button
-            onClick={loginWithGoogle}
+            onClick={() => login("google")}
             className="w-full rounded bg-white px-4 py-2.5 text-sm font-medium text-zinc-900 hover:bg-zinc-200 transition"
           >
             Sign in with Google
@@ -26,15 +28,11 @@ export function Login() {
         </div>
 
         <div className="space-y-2 text-xs text-zinc-600">
-          <p>Powered by Sentinel Auth</p>
+            <p>
+            Powered by <a href="https://docs.sentinel-auth.com/" target="_blank" rel="noopener noreferrer" className="text-zinc-500 hover:text-zinc-400 underline">Sentinel Auth</a>
+            </p>
           <div className="flex justify-center gap-4">
-            <span>JWT Auth</span>
-            <span>&middot;</span>
-            <span>Workspace Roles</span>
-            <span>&middot;</span>
-            <span>RBAC</span>
-            <span>&middot;</span>
-            <span>Entity ACLs</span>
+            
           </div>
         </div>
       </div>

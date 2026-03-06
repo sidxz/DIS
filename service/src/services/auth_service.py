@@ -3,9 +3,14 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.jwt import create_access_token, create_refresh_token, decode_token
+from src.auth.jwt import (
+    _AUD_REFRESH,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+)
 from src.config import settings
-from src.schemas.validators import strip_html
+from src.schemas.validators import sanitize_url, strip_html
 from src.models.group import GroupMembership
 from src.models.user import SocialAccount, User
 from src.models.workspace import WorkspaceMembership
@@ -22,6 +27,7 @@ async def find_or_create_user(
     provider_data: dict | None = None,
 ) -> User:
     """Find existing user by social account or create a new one."""
+    avatar_url = sanitize_url(avatar_url)
     # Check if social account exists
     stmt = select(SocialAccount).where(
         SocialAccount.provider == provider,
@@ -105,15 +111,17 @@ async def issue_tokens(
         workspace_role=membership.role,
         groups=group_ids,
     )
+    # family_id is generated inside create_refresh_token and embedded in the JWT
     refresh_token = create_refresh_token(user_id=user.id)
 
     # Store refresh token in Redis for rotation tracking
-    rt_payload = decode_token(refresh_token)
-    family_id = str(uuid.uuid4())
+    rt_payload = decode_token(refresh_token, audience=_AUD_REFRESH)
+    family_id = rt_payload["fid"]
     await token_service.store_refresh_token(
         jti=rt_payload["jti"],
         user_id=user.id,
         family_id=family_id,
+        workspace_id=workspace_id,
         client_app_id=client_app_id,
     )
 
@@ -136,44 +144,42 @@ async def rotate_refresh_token(
     - If the token was already consumed, revoke the entire family (theft signal).
     """
     try:
-        payload = decode_token(refresh_token_str)
+        payload = decode_token(refresh_token_str, audience=_AUD_REFRESH)
     except Exception:
         raise ValueError("Invalid refresh token")
-
-    if payload.get("type") != "refresh":
-        raise ValueError("Invalid token type")
 
     jti = payload["jti"]
     result = await token_service.consume_refresh_token(jti)
 
     if result is None:
-        # Already consumed or expired — possible theft. Try to find family via jti pattern.
-        # Since we can't recover the family_id, this is a hard fail.
+        # Already consumed or expired — possible theft.
+        # Extract family_id from the JWT and revoke the entire family.
+        family_id = payload.get("fid")
+        if family_id:
+            await token_service.revoke_token_family(family_id)
         raise ValueError("Refresh token already used or expired")
 
-    user_id, family_id, client_app_id = result
+    user_id, family_id, workspace_id, client_app_id = result
     user = await db.get(User, user_id)
     if not user or not user.is_active:
         await token_service.revoke_token_family(family_id)
         raise ValueError("User not found or inactive")
 
-    # Find user's most recent workspace membership to re-issue tokens
-    stmt = (
-        select(WorkspaceMembership)
-        .where(WorkspaceMembership.user_id == user_id)
-        .order_by(WorkspaceMembership.id.desc())
-        .limit(1)
+    # Verify user still belongs to the original workspace
+    stmt = select(WorkspaceMembership).where(
+        WorkspaceMembership.user_id == user_id,
+        WorkspaceMembership.workspace_id == workspace_id,
     )
     db_result = await db.execute(stmt)
     membership = db_result.scalar_one_or_none()
     if not membership:
         await token_service.revoke_token_family(family_id)
-        raise ValueError("User has no workspace membership")
+        raise ValueError("User is no longer a member of this workspace")
 
     # Get workspace slug
     from src.models.workspace import Workspace
 
-    workspace = await db.get(Workspace, membership.workspace_id)
+    workspace = await db.get(Workspace, workspace_id)
 
     # Get group IDs
     stmt = (
@@ -181,7 +187,7 @@ async def rotate_refresh_token(
         .join(GroupMembership.group)
         .where(
             GroupMembership.user_id == user.id,
-            GroupMembership.group.has(workspace_id=membership.workspace_id),
+            GroupMembership.group.has(workspace_id=workspace_id),
         )
     )
     db_result = await db.execute(stmt)
@@ -192,19 +198,20 @@ async def rotate_refresh_token(
         user_id=user.id,
         email=user.email,
         name=user.name,
-        workspace_id=membership.workspace_id,
+        workspace_id=workspace_id,
         workspace_slug=workspace.slug,
         workspace_role=membership.role,
         groups=group_ids,
     )
-    new_refresh = create_refresh_token(user_id=user.id)
+    new_refresh = create_refresh_token(user_id=user.id, family_id=family_id)
 
     # Store new refresh token in same family
-    new_rt_payload = decode_token(new_refresh)
+    new_rt_payload = decode_token(new_refresh, audience=_AUD_REFRESH)
     await token_service.store_refresh_token(
         jti=new_rt_payload["jti"],
         user_id=user.id,
         family_id=family_id,
+        workspace_id=workspace_id,
         client_app_id=client_app_id,
     )
 

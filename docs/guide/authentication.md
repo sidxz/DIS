@@ -13,7 +13,8 @@ sequenceDiagram
     participant Redis
 
     Browser->>App: Click "Sign in with Google"
-    App->>IS: GET /auth/login/{provider}<br/>?redirect_uri=Y
+    App->>App: Generate PKCE code_verifier + code_challenge (S256)
+    App->>IS: GET /auth/login/{provider}<br/>?redirect_uri=Y&code_challenge=Z&code_challenge_method=S256
     IS->>IS: Validate redirect_uri<br/>(must match an active allowed app)
     IS->>IdP: Redirect to authorization URL<br/>(with PKCE code_challenge if supported)
     IdP->>Browser: Show consent screen
@@ -23,12 +24,13 @@ sequenceDiagram
     IdP-->>IS: Access token + ID token (OIDC)
     IS->>IS: Extract user info from token/profile
     IS->>IS: find_or_create_user()
-    IS->>Redis: Store auth code (5 min TTL)
+    IS->>Redis: Store auth code + code_challenge (5 min TTL)
     IS->>App: Redirect to redirect_uri with ?code=X
     App->>IS: GET /auth/workspaces?code=X
     IS->>Redis: Peek auth code (non-consuming)
     IS-->>App: List of workspaces
-    App->>IS: POST /auth/token<br/>{code, workspace_id}
+    App->>IS: POST /auth/token<br/>{code, workspace_id, code_verifier}
+    IS->>IS: Verify SHA256(code_verifier) == code_challenge
     IS->>Redis: Consume auth code (single-use)
     IS-->>App: Access token + Refresh token
 ```
@@ -144,9 +146,19 @@ Authorization codes replace the previous pattern of passing raw `user_id` values
 | Storage | Redis (`ac:{code}` key) |
 | TTL | 5 minutes |
 | Usage | Single-use (atomic `GETDEL` on token exchange) |
-| Contents | `{user_id}` |
+| Contents | `{user_id, code_challenge, code_challenge_method}` |
 
 The code is **peeked** (non-destructive read) during workspace listing and **consumed** (atomic delete) during token exchange, ensuring it can only be used once to obtain JWTs.
+
+### PKCE on Sentinel Auth Codes
+
+In addition to IdP-level PKCE (between Sentinel and the OAuth provider), Sentinel enforces **mandatory PKCE S256 on its own authorization codes** (between the frontend app and Sentinel). This prevents authorization code interception on the Sentinel side:
+
+1. The frontend generates a `code_verifier` and `code_challenge` (SHA-256) before initiating login
+2. The `code_challenge` and `code_challenge_method` are sent as query parameters on `GET /auth/login/{provider}`
+3. Sentinel stores the `code_challenge` alongside the auth code in Redis
+4. When the frontend exchanges the code at `POST /auth/token`, it must include the `code_verifier`
+5. Sentinel verifies that `SHA256(code_verifier) == code_challenge` before issuing tokens
 
 ## Important Design Notes
 

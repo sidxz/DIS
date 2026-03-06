@@ -301,7 +301,7 @@ from sentinel_auth.roles import RoleClient
 from sentinel_auth.types import AuthenticatedUser
 
 roles = RoleClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="analytics",
     service_key="sk_my_service_key",
 )

@@ -97,7 +97,12 @@ ALLOWED_HOSTS=identity.example.com,api.example.com
 
 ### CORS
 
-Cross-Origin Resource Sharing is configured with explicit origin allowlisting:
+Cross-Origin Resource Sharing is handled by `DynamicCORSMiddleware`, which combines static and database-backed origins:
+
+1. **Static origins** from the `CORS_ORIGINS` environment variable
+2. **Dynamic origins** extracted from `client_apps.redirect_uris` in the database — the middleware derives the origin (`scheme://host[:port]`) from each registered redirect URI
+
+Origins are refreshed from the database on startup.
 
 ```env
 CORS_ORIGINS=https://app.example.com,https://admin.example.com
@@ -105,7 +110,7 @@ CORS_ORIGINS=https://app.example.com,https://admin.example.com
 
 The CORS policy allows:
 
-- **Origins**: Only those listed in `CORS_ORIGINS` (no wildcards in production)
+- **Origins**: Static origins from `CORS_ORIGINS` + origins derived from registered client app redirect URIs (no wildcards in production)
 - **Credentials**: Enabled (`allow_credentials=True`) for cookie-based admin auth
 - **Methods**: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`
 - **Headers**: `Content-Type`, `Authorization`, `X-Service-Key`
@@ -146,7 +151,7 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 | `name` | string | User display name |
 | `wid` | UUID | Workspace ID |
 | `wslug` | string | Workspace slug |
-| `wrole` | string | Workspace role (`owner`, `admin`, `member`, `viewer`) |
+| `wrole` | string | Workspace role (`owner`, `admin`, `editor`, `viewer`) |
 | `groups` | UUID[] | Group IDs the user belongs to in this workspace |
 | `type` | string | `"access"` |
 | `iat` | timestamp | Issued at |
@@ -203,16 +208,19 @@ The service implements refresh token rotation with **reuse detection**, modeled 
 
 After a successful OAuth callback, the service issues a short-lived authorization code instead of passing the raw `user_id` in the redirect URL. This prevents token theft by anyone who knows a user's UUID.
 
-1. The callback generates a cryptographically random code and stores it in Redis with a 5-minute TTL
-2. The client uses the code to fetch workspaces (`GET /auth/workspaces?code=X`) — this **peeks** at the code without consuming it
-3. The client exchanges the code for tokens (`POST /auth/token` with `{code, workspace_id}`) — this **consumes** the code atomically via `GETDEL`
-4. A consumed code cannot be reused; a second exchange attempt returns `400`
+**PKCE is mandatory** on Sentinel's own auth codes (S256 only). The frontend must generate a `code_verifier` and `code_challenge` before initiating login, pass the `code_challenge` on `GET /auth/login/{provider}`, and include the `code_verifier` when exchanging the code at `POST /auth/token`. This binds the auth code exchange to the original initiator, preventing authorization code interception attacks.
+
+1. The frontend sends `code_challenge` and `code_challenge_method=S256` as query params on the login endpoint
+2. The callback generates a cryptographically random code and stores it in Redis with a 5-minute TTL (alongside the `code_challenge`)
+3. The client uses the code to fetch workspaces (`GET /auth/workspaces?code=X`) — this **peeks** at the code without consuming it
+4. The client exchanges the code for tokens (`POST /auth/token` with `{code, workspace_id, code_verifier}`) — Sentinel verifies `SHA256(code_verifier) == code_challenge`, then **consumes** the code atomically via `GETDEL`
+5. A consumed code cannot be reused; a second exchange attempt returns `400`
 
 **Redis key structure:**
 
 | Key Pattern | Value | TTL |
 |-------------|-------|-----|
-| `ac:{code}` | JSON `{user_id}` | 5 minutes |
+| `ac:{code}` | JSON `{user_id, code_challenge, code_challenge_method}` | 5 minutes |
 
 ### Access Token Revocation
 
@@ -251,26 +259,28 @@ User logout (`POST /auth/logout`) performs two actions:
 
 ## Service-to-Service Authentication
 
-Backend services authenticate to the identity service using the `X-Service-Key` header. This is used for permission operations where a service acts autonomously or on behalf of a user.
+Backend services authenticate to the identity service using the `X-Service-Key` header. This is used for permission and role operations where a service acts autonomously or on behalf of a user.
 
-### Configuration
+### Service Apps (Database-Managed Keys)
 
-```env
-# Development: empty = no enforcement (all requests pass through)
-SERVICE_API_KEYS=
+Service API keys are managed through the **service apps** system in the admin panel (`/admin/service-apps`), not environment variables. Each service app has:
 
-# Production: comma-separated list of valid keys
-SERVICE_API_KEYS=sk_prod_abc123,sk_prod_def456
-```
+- **`name`** — human-readable label
+- **`service_name`** — the service this key is scoped to (verified by `verify_service_scope()`)
+- **`key_hash`** — SHA-256 hash of the plaintext key (the plaintext is shown once at creation)
+- **`key_prefix`** — first few characters for identification (e.g., `sk_abc1****`)
+- **`is_active`** — can be deactivated without deletion
+
+Keys are validated by `service_app_service.validate_key()`, which checks the SHA-256 hash against active service apps (with Redis caching).
 
 ### Behavior
 
-| `SERVICE_API_KEYS` Value | Request Without Key | Request With Invalid Key | Request With Valid Key |
-|--------------------------|--------------------|--------------------------|-----------------------|
-| Empty (dev mode) | Allowed | Allowed | Allowed |
-| Set (production) | 401 Unauthorized | 401 Unauthorized | Allowed |
+| Service Apps in DB | Request Without Key | Request With Invalid Key | Request With Valid Key |
+|--------------------|--------------------|--------------------------|-----------------------|
+| None active (dev mode) | Allowed | Allowed | Allowed |
+| At least one active (production) | 401 Unauthorized | 401 Unauthorized | Allowed |
 
-**Dev mode** is intentionally permissive: when `SERVICE_API_KEYS` is empty, the `require_service_key` dependency returns an empty string and does not reject any request. This allows local development without configuring keys. In production, always set at least one key.
+**Dev mode** is intentionally permissive: when no active service apps exist in the database, the `require_service_key` dependency passes through all requests. This allows local development without configuring keys. In production, register at least one service app via the admin panel.
 
 ### Dual Auth (Service Key + User JWT)
 
@@ -393,10 +403,9 @@ All security-related environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SESSION_SECRET_KEY` | `dev-only-change-me-in-production` | Secret for signing session cookies (OAuth2 state) |
-| `SERVICE_API_KEYS` | (empty) | Comma-separated valid service keys; empty = no enforcement |
 | `COOKIE_SECURE` | `false` | Set `true` in production to enable `Secure` flag and HSTS |
-| `ALLOWED_HOSTS` | `*` | Comma-separated allowed Host header values; `*` = allow all |
-| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed CORS origins |
+| `ALLOWED_HOSTS` | `""` (empty) | Derived from `BASE_URL` + `ADMIN_URL` hostnames. Falls back to `["*"]` only if no hostnames found. |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:9101` | Comma-separated static CORS origins (combined with DB client app origins at runtime) |
 | `JWT_PRIVATE_KEY_PATH` | `keys/private.pem` | Path to RS256 private key for signing tokens |
 | `JWT_PUBLIC_KEY_PATH` | `keys/public.pem` | Path to RS256 public key for verifying tokens |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime in minutes |
@@ -467,7 +476,7 @@ All output is saved to `pentest/reports/`:
 Before deploying to production, verify the following:
 
 - [ ] `SESSION_SECRET_KEY` is set to a cryptographically random value (not the default)
-- [ ] `SERVICE_API_KEYS` contains at least one strong, unique key
+- [ ] At least one service app is registered via the admin panel (`/admin/service-apps`) with a strong key
 - [ ] `COOKIE_SECURE=true` and the service is behind TLS
 - [ ] `ALLOWED_HOSTS` is set to your actual domain(s), not `*`
 - [ ] `CORS_ORIGINS` lists only your frontend origin(s)

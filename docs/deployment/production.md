@@ -16,20 +16,16 @@ SESSION_SECRET_KEY=your-generated-value-here
 
 This key signs the OAuth2 state parameter during login flows. If left at the default, an attacker could forge OAuth state and perform CSRF attacks.
 
-## 2. Configure service API keys
+## 2. Register service apps
 
-Set `SERVICE_API_KEYS` to a comma-separated list of strong, unique keys -- one per consuming service:
+Service API keys are managed via the admin panel (`/admin/service-apps`), not environment variables. Each consuming service needs its own service app:
 
-```bash
-# Generate a key for each service
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
+1. Log in to the admin panel
+2. Navigate to **Service Apps**
+3. Create a service app for each consuming service (e.g., "docu-store", "analytics")
+4. Copy the plaintext key shown at creation -- it cannot be retrieved again
 
-```ini
-SERVICE_API_KEYS=key-for-docu-store,key-for-other-service
-```
-
-When this is empty, service-key authentication is disabled entirely (acceptable only in development).
+When no active service apps exist in the database, service-key authentication is disabled entirely (acceptable only in development).
 
 ## 3. Enable secure cookies
 
@@ -131,7 +127,7 @@ JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public.pem
 ## Summary Checklist
 
 - [ ] `SESSION_SECRET_KEY` set to a random 32-byte string
-- [ ] `SERVICE_API_KEYS` set with strong, unique keys
+- [ ] At least one service app registered via admin panel with strong keys
 - [ ] `COOKIE_SECURE=true`
 - [ ] `ALLOWED_HOSTS` set to your domain(s)
 - [ ] `CORS_ORIGINS` set to your frontend origin(s)

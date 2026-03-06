@@ -1,8 +1,6 @@
-"""Rate limiting configuration using slowapi + global fallback middleware."""
+"""Rate limiting configuration using slowapi (Redis-backed) + global middleware."""
 
-import time
-from collections import defaultdict
-
+import redis.asyncio as aioredis
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -10,7 +8,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-limiter = Limiter(key_func=get_remote_address)
+from src.config import settings
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=settings.redis_url,
+)
 
 
 async def rate_limit_exceeded_handler(
@@ -23,18 +26,28 @@ async def rate_limit_exceeded_handler(
     )
 
 
-class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
-    """Simple IP-based rate limiter for all endpoints without explicit limits.
+_redis: aioredis.Redis | None = None
 
-    Applies a default 30 requests/minute per IP. Endpoints with their own
-    @limiter.limit() decorator have stricter limits and hit those first.
+
+async def _get_redis() -> aioredis.Redis:
+    global _redis
+    if _redis is None:
+        _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+    return _redis
+
+
+class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
+    """IP-based rate limiter for all endpoints, backed by Redis.
+
+    Applies a default 30 requests/minute per IP using a Redis sliding window.
+    Endpoints with their own @limiter.limit() decorator have stricter limits
+    and hit those first.
     """
 
     def __init__(self, app, requests_per_minute: int = 30):
         super().__init__(app)
         self.rpm = requests_per_minute
         self.window = 60  # seconds
-        self._hits: dict[str, list[float]] = defaultdict(list)
 
     def _get_client_ip(self, request: Request) -> str:
         if request.client:
@@ -47,18 +60,19 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         ip = self._get_client_ip(request)
-        now = time.time()
-        cutoff = now - self.window
+        key = f"rl:global:{ip}"
 
-        # Prune old entries
-        self._hits[ip] = [t for t in self._hits[ip] if t > cutoff]
+        r = await _get_redis()
+        count = await r.incr(key)
+        if count == 1:
+            await r.expire(key, self.window)
 
-        if len(self._hits[ip]) >= self.rpm:
+        if count > self.rpm:
+            ttl = await r.ttl(key)
             return JSONResponse(
                 status_code=429,
                 content={"detail": "Rate limit exceeded"},
-                headers={"Retry-After": str(self.window)},
+                headers={"Retry-After": str(max(ttl, 1))},
             )
 
-        self._hits[ip].append(now)
         return await call_next(request)

@@ -69,7 +69,7 @@ The SDK depends on:
 
 ```
 sentinel_auth/
-    __init__.py          # Re-exports AuthenticatedUser, WorkspaceContext, RoleClient
+    __init__.py          # Re-exports AuthenticatedUser, JWTAuthMiddleware, PermissionClient, RoleClient, WorkspaceContext
     types.py             # AuthenticatedUser, WorkspaceContext dataclasses
     middleware.py         # JWTAuthMiddleware
     dependencies.py      # get_current_user, get_workspace_id, get_workspace_context, require_role, require_action
@@ -101,7 +101,7 @@ app.add_middleware(
 
 # 2. Create permission client
 permissions = PermissionClient(
-    base_url="http://identity-service:8000",
+    base_url="http://identity-service:9003",
     service_name="my-service",
     service_key="sk_my_service_key",
 )

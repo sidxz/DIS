@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from src.schemas.validators import SafeStrOptional
+from src.schemas.validators import SafeStrOptional, SafeUrl
 
 
 class UserResponse(BaseModel):
@@ -19,4 +19,4 @@ class UserResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     name: SafeStrOptional = None
-    avatar_url: str | None = None
+    avatar_url: SafeUrl = None

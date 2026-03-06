@@ -1,44 +1,18 @@
 # Installation
 
-This guide covers getting the Sentinel Auth installed and its infrastructure running on your local machine.
+## Quick Start with Docker (recommended)
 
-## Quick Path
+Run the published Docker image — no need to clone the repository.
 
-If you want to skip the manual steps, the Makefile handles everything:
-
-```bash
-git clone <repo-url> identity-service
-cd identity-service
-cp .env.example .env
-make setup
-```
-
-`make setup` will generate RSA keys, install all dependencies (service + SDK + admin UI), and start PostgreSQL and Redis in Docker. Once it finishes, jump to the [Quickstart](quickstart.md).
-
----
-
-## Step-by-Step
-
-### 1. Clone the repository
+### 1. Create a project directory
 
 ```bash
-git clone <repo-url> identity-service
-cd identity-service
+mkdir sentinel && cd sentinel
 ```
 
-### 2. Install dependencies
+### 2. Generate RSA keys
 
-The project uses a **uv workspace** with two members (`service/` and `sdk/`), managed from the root `pyproject.toml`. A single sync installs everything:
-
-```bash
-uv sync
-```
-
-This creates a virtual environment and installs both the FastAPI service and the `sentinel-auth-sdk` package in editable mode.
-
-### 3. Generate RSA keys for JWT signing
-
-The service signs access tokens with RS256. Generate a 2048-bit RSA key pair into the `keys/` directory:
+The service signs access tokens with RS256. Generate a 2048-bit key pair:
 
 ```bash
 mkdir -p keys
@@ -47,9 +21,105 @@ openssl rsa -in keys/private.pem -pubout -out keys/public.pem
 ```
 
 !!! warning "Keep your private key safe"
-    The `keys/` directory is gitignored. Never commit `private.pem` to version control. In production, inject the key via a secrets manager or mount it as a volume.
+    Never commit `private.pem` to version control. In production, inject the key via a secrets manager or mount it as a volume.
 
-### 4. Create your `.env` file
+### 3. Create an environment file
+
+Download the template and fill in the required values:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sidxz/daikon-sentinel/main/.env.prod.example -o .env
+```
+
+Then generate and fill in the secrets:
+
+```bash
+# Generate passwords and secrets
+echo "POSTGRES_PASSWORD=$(openssl rand -base64 24)"
+echo "REDIS_PASSWORD=$(openssl rand -base64 24)"
+echo "SESSION_SECRET_KEY=$(openssl rand -base64 32)"
+```
+
+Paste the generated values into your `.env` file. For local development, set:
+
+```dotenv
+BASE_URL=http://localhost:9003
+ADMIN_URL=http://localhost:9003
+CORS_ORIGINS=http://localhost:9003
+ADMIN_EMAILS=you@example.com
+```
+
+Uncomment and configure at least one OAuth provider (see [Quickstart](quickstart.md) for details).
+
+### 4. Download the Compose file
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sidxz/daikon-sentinel/main/docker-compose.prod.yml -o docker-compose.prod.yml
+```
+
+### 5. Start the stack
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+This starts PostgreSQL, Redis, and the Sentinel service. Database migrations run automatically on first boot.
+
+### 6. Verify
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost:9003/health
+```
+
+You should see all three containers healthy and a `200 OK` from the health endpoint.
+
+---
+
+## Building from Source (contributors)
+
+Use this path if you want to develop the service itself or run the admin panel locally.
+
+### Quick path
+
+```bash
+git clone <repo-url> identity-service
+cd identity-service
+cp .env.example .env
+make setup
+```
+
+`make setup` generates RSA keys, installs all dependencies (service + SDK + admin UI), and starts PostgreSQL and Redis in Docker. Once it finishes, jump to the [Quickstart](quickstart.md).
+
+<details>
+<summary>Manual step-by-step</summary>
+
+#### 1. Clone the repository
+
+```bash
+git clone <repo-url> identity-service
+cd identity-service
+```
+
+#### 2. Install dependencies
+
+The project uses a **uv workspace** with two members (`service/` and `sdk/`):
+
+```bash
+uv sync
+```
+
+This creates a virtual environment and installs both the FastAPI service and the `sentinel-auth-sdk` package in editable mode.
+
+#### 3. Generate RSA keys
+
+```bash
+mkdir -p keys
+openssl genrsa -out keys/private.pem 2048
+openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+```
+
+#### 4. Create your `.env` file
 
 ```bash
 cp .env.example .env
@@ -57,9 +127,7 @@ cp .env.example .env
 
 The defaults work for local development. You will configure OAuth credentials and the session secret in the [Quickstart](quickstart.md).
 
-### 5. Start infrastructure
-
-The service depends on **PostgreSQL 16** and **Redis 7**, both defined in `docker-compose.yml`. Start only what you need:
+#### 5. Start infrastructure
 
 ```bash
 docker compose up -d identity-postgres identity-redis
@@ -72,25 +140,34 @@ Default ports:
 | PostgreSQL | `9001` |
 | Redis | `9002` |
 
-Wait for PostgreSQL to report healthy before proceeding:
+Wait for PostgreSQL to report healthy:
 
 ```bash
 docker compose ps
 ```
 
-### 6. Database migrations
+#### 6. Database migrations
 
-No manual migration step is required. The service runs Alembic migrations **automatically on startup**, so the schema is always up to date when the application boots.
+No manual step required — the service runs Alembic migrations automatically on startup.
+
+</details>
 
 ---
 
 ## Verify the installation
 
-At this point you should have:
+=== "Docker"
 
-- [x] Python dependencies installed (check with `uv run python -c "import sentinel_auth"`)
-- [x] RSA key pair in `keys/`
-- [x] PostgreSQL and Redis running in Docker
-- [x] A `.env` file based on `.env.example`
+    - [x] All three containers running (`docker compose -f docker-compose.prod.yml ps`)
+    - [x] RSA key pair in `keys/`
+    - [x] Health check passes (`curl http://localhost:9003/health`)
+    - [x] `.env` file with secrets and OAuth credentials filled in
 
-Next: [Quickstart](quickstart.md) -- configure an OAuth provider and start the service.
+=== "From Source"
+
+    - [x] Python dependencies installed (`uv run python -c "import sentinel_auth"`)
+    - [x] RSA key pair in `keys/`
+    - [x] PostgreSQL and Redis running in Docker
+    - [x] `.env` file based on `.env.example`
+
+Next: [Quickstart](quickstart.md) -- configure an OAuth provider, register your apps, and start the service.

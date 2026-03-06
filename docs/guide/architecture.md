@@ -198,7 +198,33 @@ erDiagram
         timestamptz updated_at
     }
 
+    service_apps {
+        uuid id PK
+        text name
+        text service_name
+        text key_hash
+        text key_prefix
+        bool is_active
+        timestamptz last_used_at
+        uuid created_by FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    activity_logs {
+        uuid id PK
+        text action
+        uuid actor_id FK
+        text target_type
+        uuid target_id
+        uuid workspace_id FK
+        jsonb detail
+        timestamptz created_at
+    }
+
     users ||--o{ client_apps : "created"
+    users ||--o{ service_apps : "created"
+    users ||--o{ activity_logs : "performed"
     users ||--o{ social_accounts : "has"
     users ||--o{ workspace_memberships : "belongs to"
     users ||--o{ group_memberships : "belongs to"

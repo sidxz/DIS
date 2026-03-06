@@ -1,6 +1,6 @@
 # Quickstart
 
-This guide assumes you have completed the [Installation](installation.md) steps. You will configure an OAuth provider, start the service, and verify everything works.
+This guide assumes you have completed the [Installation](installation.md) steps. You will configure an OAuth provider, register client and service apps, and verify the full auth flow.
 
 ## 1. Configure an OAuth Provider
 
@@ -35,49 +35,105 @@ Paste the output into your `.env`:
 SESSION_SECRET_KEY=your-generated-secret-here
 ```
 
+!!! note "Docker users"
+    If you followed the Docker installation path, you already generated this in step 3 of the installation.
+
 !!! danger "Do not skip this in production"
     The default value (`dev-only-change-me-in-production`) is intentionally insecure. Always set a unique, random secret for any non-local environment.
 
 ## 3. Start the Service
 
-```bash
-make start
-```
+=== "Docker"
 
-This runs the FastAPI application with hot-reload on **port 9003**. Database migrations are applied automatically on startup.
+    If you followed the Docker installation, the service is already running. After updating your `.env` with OAuth credentials, restart to pick up the changes:
 
-## 4. Verify It's Running
+    ```bash
+    docker compose -f docker-compose.prod.yml up -d
+    ```
+
+=== "From Source"
+
+    ```bash
+    make start
+    ```
+
+    This runs the FastAPI application with hot-reload on **port 9003**. Database migrations are applied automatically on startup.
+
+Verify it's running:
 
 ```bash
 curl http://localhost:9003/health
 ```
 
-You should get a `200 OK` response confirming the service is healthy.
+## 4. Access the Admin Panel
 
-## 5. Explore the API
+The admin panel is built into the Sentinel container and served at the same port:
 
-Open the interactive Swagger UI in your browser:
+=== "Docker"
 
-> [http://localhost:9003/docs](http://localhost:9003/docs)
+    Open [http://localhost:9003/admin](http://localhost:9003/admin) in your browser.
 
-This documents every endpoint, including auth flows, user management, workspace operations, group management, and the permission system.
+=== "From Source"
 
-## 6. Try the Auth Flow
+    Start the admin panel separately:
 
-First, register a client app via the admin API (requires an admin user — see "Optional" section below):
+    ```bash
+    make admin
+    ```
 
-```bash
-curl -X POST http://localhost:9003/admin/client-apps \
-  -H "Content-Type: application/json" \
-  -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
-  -d '{"name": "dev-test", "redirect_uris": ["http://localhost:9003/docs"]}'
-```
+    Then open [http://localhost:9004](http://localhost:9004).
 
-Then navigate to the login endpoint with the registered redirect URI:
+!!! note "Admin access"
+    Your email must be listed in the `ADMIN_EMAILS` environment variable (comma-separated) to access the admin panel. You can also promote a user with `make create-admin` (from-source only).
+
+Sign in through the admin panel using your OAuth provider to create your initial user account.
+
+## 5. Register a Client App
+
+Every frontend that authenticates through Sentinel must be registered as a **client app** with its redirect URI(s). This prevents unauthorized apps from initiating OAuth flows.
+
+=== "Admin Panel"
+
+    1. Navigate to **Client Apps** in the sidebar.
+    2. Click **Add Client App**.
+    3. Set a name (e.g., `dev-frontend`) and add the redirect URI: `http://localhost:9003/docs`.
+    4. Save.
+
+=== "curl"
+
+    ```bash
+    curl -X POST http://localhost:9003/admin/client-apps \
+      -H "Content-Type: application/json" \
+      -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
+      -d '{"name": "dev-frontend", "redirect_uris": ["http://localhost:9003/docs"]}'
+    ```
+
+!!! info "Why client apps?"
+    Client apps control the redirect URI allowlist. Sentinel will reject any `redirect_uri` that doesn't match a registered client app. This protects against open-redirect attacks.
+
+## 6. Register a Service App
+
+If your backend needs to call Sentinel's API (for permissions, roles, or resource registration), register a **service app** to get an API key.
+
+=== "Admin Panel"
+
+    1. Navigate to **Service Apps** in the sidebar.
+    2. Click **Add Service App**.
+    3. Set a name and toggle **Dev Mode** on for local development.
+    4. Copy the generated `sk_...` key — you'll need it for your backend's `.env`.
+
+!!! tip "Service apps vs. the old `SERVICE_API_KEYS`"
+    Service apps are managed in the database through the admin panel. The `SERVICE_API_KEYS` environment variable is deprecated and only used as a fallback during migration.
+
+## 7. Verify the Auth Flow
+
+Navigate to the login endpoint with the redirect URI you registered:
 
 > `http://localhost:9003/auth/login/google?redirect_uri=http://localhost:9003/docs`
 
-This will redirect you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and redirects to your `redirect_uri` with an authorization code (`?code=X`). Exchange it for JWT tokens:
+This redirects you to Google's consent screen. After you authorize, the service creates a user record (if it's your first login) and redirects to your `redirect_uri` with an authorization code (`?code=X`).
+
+Exchange it for JWT tokens:
 
 ```bash
 curl -X POST http://localhost:9003/auth/token \
@@ -85,39 +141,47 @@ curl -X POST http://localhost:9003/auth/token \
   -d '{"code": "CODE_FROM_REDIRECT", "workspace_id": "YOUR_WS_ID"}'
 ```
 
-## Optional: Seed Data and Admin UI
+## 8. Explore the API
 
-### Load test data
+Open the interactive Swagger UI:
 
-```bash
-make seed
-```
+> [http://localhost:9003/docs](http://localhost:9003/docs)
 
-This populates the database with sample users, workspaces, groups, and permissions -- useful for exploring the API without manually creating resources.
+This documents every endpoint, including auth flows, user management, workspace operations, group management, and the permission system.
 
-### Start the Admin UI
+## Optional: Seed Data
 
-```bash
-make admin
-```
+Load test data to explore the API without manually creating resources:
 
-The admin panel runs on **port 9004** at [http://localhost:9004](http://localhost:9004). It provides a dashboard with user management, workspace administration, and a permissions browser.
+=== "Docker"
 
-!!! note "Admin access"
-    To access the admin UI, your user's email must be listed in the `ADMIN_EMAILS` environment variable (comma-separated). You can also promote a user with `make create-admin`.
+    ```bash
+    docker compose -f docker-compose.prod.yml exec sentinel python -m scripts.seed
+    ```
+
+=== "From Source"
+
+    ```bash
+    make seed
+    ```
+
+This populates the database with sample users, workspaces, groups, and permissions.
 
 ## Try the Demo App
 
-The repository includes a complete demo application ("Team Notes") that showcases all identity service features — JWT auth, workspace roles, entity ACLs, and custom RBAC — with a React frontend and FastAPI backend.
+The repository includes a complete demo application ("Team Notes") that showcases JWT auth, workspace roles, entity ACLs, and custom RBAC with a React frontend using `@sentinel-auth/react` and a FastAPI backend.
+
+!!! note "Prerequisites"
+    Before the demo app can authenticate, register a client app with redirect URI `http://localhost:9101/auth/callback` (see step 5 above) and a service app for the demo backend (see step 6).
 
 ```bash
-# Terminal 1: Identity service (if not already running)
-make start
+# Clone the repo if you haven't already
+git clone <repo-url> identity-service && cd identity-service
 
-# Terminal 2: Demo backend
+# Demo backend
 cd demo/backend && uv sync && uv run python -m src.main
 
-# Terminal 3: Demo frontend
+# Demo frontend (in another terminal)
 cd demo/frontend && npm install && npm run dev
 ```
 

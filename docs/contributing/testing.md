@@ -173,7 +173,7 @@ def service_headers():
     return {"X-Service-Key": "test-service-key"}
 ```
 
-Ensure `SERVICE_API_KEYS` includes `test-service-key` in your test configuration.
+In development (no active service apps in the database), all service key values are accepted. For integration tests that require a specific key, create a service app via the admin API or test fixtures.
 
 ## Security / Penetration Testing
 
