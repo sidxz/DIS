@@ -6,9 +6,12 @@ A lightweight authentication, workspace management, and entity-level permissions
 
 ## Status
 
-[![CI](https://github.com/sidxz/DIS/actions/workflows/ci.yml/badge.svg)](https://github.com/sidxz/DIS/actions/workflows/ci.yml)
-[![Docs](https://github.com/sidxz/DIS/actions/workflows/docs.yml/badge.svg)](https://sidxz.github.io/DIS/)
-[![Docker](https://img.shields.io/badge/Docker-ghcr.io/sidxz/sentinel-2496ed?logo=docker&logoColor=white)](https://ghcr.io/sidxz/sentinel)
+[![CI](https://github.com/sidxz/Sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/sidxz/Sentinel/actions/workflows/ci.yml)
+[![Docs](https://github.com/sidxz/Sentinel/actions/workflows/docs.yml/badge.svg)](https://sidxz.github.io/Sentinel/)
+[![PyPI](https://img.shields.io/pypi/v/sentinel-auth-sdk?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/sentinel-auth-sdk/)
+[![npm](https://img.shields.io/npm/v/@sentinel-auth/js?logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@sentinel-auth/js)
+[![Docker](https://img.shields.io/badge/Docker-ghcr.io/sidxz/sentinel-2496ed?logo=docker&logoColor=white)](https://github.com/sidxz/Sentinel/pkgs/container/sentinel)
+[![License](https://img.shields.io/github/license/sidxz/Sentinel?logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -102,7 +105,7 @@ make seed     # (optional) load test data
 3. Register a **client app** (redirect URI allowlist for your frontend).
 4. Register a **service app** (API key for your backend).
 
-See the [Getting Started guide](https://sidxz.github.io/Sentinel/getting-started/) for the full walkthrough.
+See the [Getting Started guide](https://sidxz.github.io/Sentinel/getting-started/) for the full walkthrough, or the [Next.js Tutorial](https://sidxz.github.io/Sentinel/guide/tutorial-nextjs/) for a Next.js frontend.
 
 ## SDK usage
 
