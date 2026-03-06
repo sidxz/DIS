@@ -1,6 +1,6 @@
 {
   "name": "@sentinel-auth/react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Sentinel Auth React SDK — provider, hooks, and components",
   "license": "MIT",
