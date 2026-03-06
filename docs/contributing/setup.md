@@ -36,10 +36,10 @@ Setup complete!
 
 ## Environment Configuration
 
-Copy the example environment file and adjust as needed:
+`make setup` generates `service/.env` from `.env.dev.example` automatically. To do it manually:
 
 ```bash
-cp .env.example .env
+cp .env.dev.example service/.env
 ```
 
 The defaults work out of the box for local development. See the [Environment Variables](../deployment/environment.md) reference for all available options.

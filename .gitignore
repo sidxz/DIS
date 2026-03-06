@@ -12,7 +12,7 @@ wheels/
 # Secrets
 keys/
 .env*
-!.env.example
+!.env.dev.example
 !.env.prod.example
 !demo/backend/.env.example
 

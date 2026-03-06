@@ -125,7 +125,7 @@ to start with empty `SERVICE_API_KEYS` when `DEBUG=False`.
 - `service/src/api/admin_routes.py` — service key display updated
 - `service/src/services/permission_service.py` — new `get_permission_by_id()`
 - `service/src/main.py` — startup check uses `service_api_key_map`
-- `.env.example`, `.env.prod.example` — format documentation updated
+- `.env.dev.example`, `.env.prod.example` — format documentation updated
 
 ### Residual Risks
 - **No per-workspace scoping** — a docu-store key works across all workspaces.

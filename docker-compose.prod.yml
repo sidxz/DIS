@@ -1,7 +1,7 @@
 # Sentinel Auth — Production Docker Compose
 #
 # Quick start:
-#   make setup-prod          # generates keys, certs, .env.prod (one-time)
+#   make setup               # generates keys, certs, env files (one-time)
 #   vim .env.prod            # set BASE_URL, OAuth creds, ADMIN_EMAILS
 #   docker stack deploy -c docker-compose.prod.yml sentinel
 #

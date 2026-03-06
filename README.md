@@ -91,8 +91,7 @@ The service is available at `http://localhost:9003` with interactive API docs at
 
 ```bash
 git clone <repo-url> identity-service && cd identity-service
-cp .env.example .env
-make setup    # generates keys, installs deps, starts Postgres + Redis
+make setup    # generates keys, TLS certs, env files, installs deps, starts Postgres + Redis
 make start    # starts the service on :9003
 make admin    # starts the admin panel on :9004
 make seed     # (optional) load test data
