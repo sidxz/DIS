@@ -5,12 +5,12 @@ import { AuthzProvider } from '@sentinel-auth/react'
 import { App } from './App'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:9200'
+const SENTINEL_URL = import.meta.env.VITE_SENTINEL_URL || 'http://localhost:9003'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <AuthzProvider config={{ backendUrl: BACKEND_URL }}>
+      <AuthzProvider config={{ sentinelUrl: SENTINEL_URL }}>
         <App />
       </AuthzProvider>
     </GoogleOAuthProvider>
