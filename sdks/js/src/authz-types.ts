@@ -1,9 +1,9 @@
 import type { SentinelUser, WorkspaceRole } from './types'
 
 export interface SentinelAuthzConfig {
-  /** Base URL of the client backend (e.g. "http://localhost:9200").
-   *  Derives /auth/resolve for token exchange. */
-  backendUrl: string
+  /** Base URL of the Sentinel service (e.g. "http://localhost:9003").
+   *  Derives /authz/resolve for token exchange. */
+  sentinelUrl: string
   /** Token storage backend. Defaults to AuthzLocalStorageStore. */
   storage?: AuthzTokenStore
   /** Automatically refresh authz token before expiry. Defaults to true. */

@@ -48,7 +48,7 @@ describe('SentinelAuthz', () => {
   beforeEach(() => {
     store = new AuthzMemoryStore()
     client = new SentinelAuthz({
-      backendUrl: 'http://localhost:9200',
+      sentinelUrl: 'http://localhost:9003',
       storage: store,
       autoRefresh: false,
     })
@@ -65,7 +65,7 @@ describe('SentinelAuthz', () => {
       new Response(JSON.stringify(resolveResponse), { status: 200 }),
     )
     const result = await client.resolve('idp-token-123', 'google')
-    expect(fetch).toHaveBeenCalledWith('http://localhost:9200/auth/resolve', {
+    expect(fetch).toHaveBeenCalledWith('http://localhost:9003/authz/resolve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idp_token: 'idp-token-123', provider: 'google' }),
@@ -81,7 +81,7 @@ describe('SentinelAuthz', () => {
     const listener = vi.fn()
     client.onAuthStateChange(listener)
     await client.selectWorkspace('idp-token-123', 'google', 'ws-1')
-    expect(fetch).toHaveBeenCalledWith('http://localhost:9200/auth/resolve', {
+    expect(fetch).toHaveBeenCalledWith('http://localhost:9003/authz/resolve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

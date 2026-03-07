@@ -15,7 +15,7 @@ type AuthStateListener = (user: SentinelUser | null) => void
  * Manages dual tokens: IdP token (identity) + Sentinel authz token (authorization).
  */
 export class SentinelAuthz {
-  private readonly backendUrl: string
+  private readonly sentinelUrl: string
   private readonly store: AuthzTokenStore
   private readonly autoRefresh: boolean
   private readonly refreshBuffer: number
@@ -24,11 +24,11 @@ export class SentinelAuthz {
   private listeners: Set<AuthStateListener> = new Set()
 
   constructor(config: SentinelAuthzConfig) {
-    this.backendUrl = config.backendUrl.replace(/\/+$/, '')
+    this.sentinelUrl = config.sentinelUrl.replace(/\/+$/, '')
     this.store = config.storage ?? new AuthzLocalStorageStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 30
-    warnIfInsecure(this.backendUrl, 'SentinelAuthz')
+    warnIfInsecure(this.sentinelUrl, 'SentinelAuthz')
 
     if (this.autoRefresh && this.store.getAuthzToken()) {
       this.scheduleRefresh()
@@ -39,7 +39,7 @@ export class SentinelAuthz {
 
   /** Resolve an IdP token to discover the user's available workspaces. */
   async resolve(idpToken: string, provider: string): Promise<AuthzResolveResponse> {
-    const res = await fetch(`${this.backendUrl}/auth/resolve`, {
+    const res = await fetch(`${this.sentinelUrl}/authz/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ idp_token: idpToken, provider }),
@@ -53,7 +53,7 @@ export class SentinelAuthz {
 
   /** Select a workspace and exchange the IdP token for a Sentinel authz token. */
   async selectWorkspace(idpToken: string, provider: string, workspaceId: string): Promise<void> {
-    const res = await fetch(`${this.backendUrl}/auth/resolve`, {
+    const res = await fetch(`${this.sentinelUrl}/authz/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
