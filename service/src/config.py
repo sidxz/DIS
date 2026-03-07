@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     admin_token_expire_minutes: int = 60
+    authz_token_expire_minutes: int = 5
 
     # OAuth2 providers
     google_client_id: str = ""

@@ -30,6 +30,7 @@ def get_public_key() -> str:
 _AUD_ACCESS = "sentinel:access"
 _AUD_ADMIN = "sentinel:admin"
 _AUD_REFRESH = "sentinel:refresh"
+_AUD_AUTHZ = "sentinel:authz"
 _ISSUER = settings.base_url
 
 
@@ -89,6 +90,37 @@ def create_refresh_token(user_id: uuid.UUID, family_id: str | None = None) -> st
         "iat": now,
         "exp": now + timedelta(days=settings.refresh_token_expire_days),
         "type": "refresh",
+    }
+    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+
+
+def create_authz_token(
+    user_id: uuid.UUID,
+    idp_sub: str,
+    workspace_id: uuid.UUID,
+    workspace_slug: str,
+    workspace_role: str,
+    actions: list[str],
+) -> str:
+    """Create a short-lived authorization-only JWT.
+
+    This token carries workspace role and RBAC actions but NOT identity.
+    Identity is proven by the IdP token (validated separately).
+    The idp_sub claim binds this token to a specific IdP identity.
+    """
+    now = datetime.now(UTC)
+    payload = {
+        "iss": _ISSUER,
+        "sub": str(user_id),
+        "idp_sub": idp_sub,
+        "wid": str(workspace_id),
+        "wslug": workspace_slug,
+        "wrole": workspace_role,
+        "actions": actions,
+        "aud": _AUD_AUTHZ,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.authz_token_expire_minutes),
+        "type": "authz",
     }
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
 
