@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
+from jwt.algorithms import RSAAlgorithm
 
 from sentinel_auth._utils import warn_if_insecure
+from sentinel_auth.authz import AuthzClient
+from sentinel_auth.authz_middleware import AuthzMiddleware
 from sentinel_auth.dependencies import get_current_user, get_request_auth_factory
 from sentinel_auth.dependencies import require_action as _require_action
 from sentinel_auth.middleware import JWTAuthMiddleware
@@ -18,30 +22,25 @@ from sentinel_auth.roles import RoleClient
 class Sentinel:
     """One-line integration with the Sentinel identity service.
 
-    Replaces the typical ~30 lines of boilerplate (construct JWKS URL,
-    create ``PermissionClient``, create ``RoleClient``, write a lifespan,
-    wire middleware) with a single object::
+    Operates in two modes:
 
-        sentinel = Sentinel(
-            base_url="http://localhost:9003",
-            service_name="my-service",
-            service_key="sk_...",
-            actions=[
-                {"action": "reports:export", "description": "Export reports"},
-            ],
-        )
-        app = FastAPI(lifespan=sentinel.lifespan)
-        sentinel.protect(app)
+    **AuthZ mode** (default): Client apps authenticate users directly with
+    their IdP. Sentinel validates the IdP token and issues an authorization-only
+    JWT. The SDK middleware validates both tokens on each request.
+
+    **Proxy mode**: Sentinel handles the entire OAuth flow and issues a single
+    JWT containing both identity and authorization claims.
 
     Args:
         base_url: Root URL of the Sentinel identity service.
         service_name: The service name registered in Sentinel.
-        service_key: Service API key (from admin panel). Must be non-empty.
+        service_key: Service API key (from admin panel).
+        mode: ``"authz"`` (default) or ``"proxy"``.
+        idp_public_key: PEM-encoded public key for validating IdP tokens.
+            Required when ``mode="authz"``.
         actions: Optional list of RBAC action dicts to register on startup.
-            Each dict should have ``action`` (str) and optionally
-            ``description`` (str).
-        allowed_workspaces: Optional set of workspace IDs (as strings)
-            permitted to access this service.  ``None`` allows all.
+        allowed_workspaces: Optional set of workspace IDs permitted to access
+            this service. ``None`` allows all. Only used in proxy mode.
     """
 
     def __init__(
@@ -49,6 +48,8 @@ class Sentinel:
         base_url: str,
         service_name: str,
         service_key: str,
+        mode: str = "authz",
+        idp_public_key: str | None = None,
         actions: list[dict] | None = None,
         allowed_workspaces: set[str] | None = None,
     ):
@@ -57,15 +58,23 @@ class Sentinel:
                 "service_key is required. Create a service app in the Sentinel "
                 "admin panel (/admin/service-apps) and pass the key here."
             )
+        if mode not in ("authz", "proxy"):
+            raise ValueError(f"mode must be 'authz' or 'proxy', got '{mode}'")
+        if mode == "authz" and not idp_public_key:
+            raise ValueError("idp_public_key is required when mode='authz'")
 
         self.base_url = base_url.rstrip("/")
         self.service_name = service_name
         self.service_key = service_key
+        self.mode = mode
+        self.idp_public_key = idp_public_key
         self.actions = actions
         self.allowed_workspaces = allowed_workspaces
 
         self._permissions: PermissionClient | None = None
         self._roles: RoleClient | None = None
+        self._authz: AuthzClient | None = None
+        self._sentinel_public_key: str | None = None
 
         warn_if_insecure(self.base_url, "Sentinel")
 
@@ -93,6 +102,13 @@ class Sentinel:
             )
         return self._roles
 
+    @property
+    def authz(self) -> AuthzClient:
+        """Lazily-created authz client."""
+        if self._authz is None:
+            self._authz = AuthzClient(self.base_url, self.service_key)
+        return self._authz
+
     # -- Middleware -----------------------------------------------------------
 
     def protect(
@@ -100,21 +116,46 @@ class Sentinel:
         app: FastAPI,
         exclude_paths: list[str] | None = None,
     ) -> None:
-        """Add ``JWTAuthMiddleware`` to the app.
+        """Add authentication middleware to the app.
 
-        The JWKS URL is auto-derived from ``base_url``.
-
-        Args:
-            app: The FastAPI application instance.
-            exclude_paths: Path prefixes that skip JWT validation
-                (defaults to ``["/health", "/docs", "/openapi.json"]``).
+        In authz mode: adds ``AuthzMiddleware`` (validates IdP + authz tokens).
+        In proxy mode: adds ``JWTAuthMiddleware`` (validates Sentinel JWT).
         """
-        app.add_middleware(
-            JWTAuthMiddleware,
-            base_url=self.base_url,
-            exclude_paths=exclude_paths,
-            allowed_workspaces=self.allowed_workspaces,
+        if self.mode == "authz":
+            if not self._sentinel_public_key:
+                raise RuntimeError(
+                    "Sentinel public key not loaded. Use sentinel.lifespan "
+                    "or call await sentinel.fetch_sentinel_public_key() first."
+                )
+            app.add_middleware(
+                AuthzMiddleware,
+                idp_public_key=self.idp_public_key,
+                sentinel_public_key=self._sentinel_public_key,
+                exclude_paths=exclude_paths,
+            )
+        else:
+            app.add_middleware(
+                JWTAuthMiddleware,
+                base_url=self.base_url,
+                exclude_paths=exclude_paths,
+                allowed_workspaces=self.allowed_workspaces,
+            )
+
+    async def fetch_sentinel_public_key(self) -> str:
+        """Fetch Sentinel's public key from its JWKS endpoint."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{self.base_url}/.well-known/jwks.json")
+            resp.raise_for_status()
+            jwks = resp.json()
+        key_data = jwks["keys"][0]
+        pub_key = RSAAlgorithm.from_jwk(key_data)
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
         )
+
+        self._sentinel_public_key = pub_key.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo).decode()
+        return self._sentinel_public_key
 
     # -- Lifespan ------------------------------------------------------------
 
@@ -122,12 +163,16 @@ class Sentinel:
     def lifespan(self) -> Callable[[FastAPI], AsyncIterator[None]]:
         """Return an async context manager factory for ``FastAPI(lifespan=...)``.
 
-        On startup: registers RBAC actions (if any were provided).
-        On shutdown: closes the HTTP clients.
+        On startup:
+        - In authz mode: fetches Sentinel's public key from JWKS endpoint.
+        - Registers RBAC actions (if any were provided).
+        On shutdown: closes HTTP clients.
         """
 
         @asynccontextmanager
         async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+            if self.mode == "authz":
+                await self.fetch_sentinel_public_key()
             if self.actions:
                 await self.roles.register_actions(self.actions)
             yield
@@ -135,6 +180,8 @@ class Sentinel:
                 await self._permissions.close()
             if self._roles is not None:
                 await self._roles.close()
+            if self._authz is not None:
+                await self._authz.close()
 
         return _lifespan
 
@@ -142,45 +189,17 @@ class Sentinel:
 
     @property
     def require_user(self) -> Callable:
-        """FastAPI dependency returning the authenticated user.
-
-        Usage::
-
-            @app.get("/items")
-            async def list_items(user: AuthenticatedUser = Depends(sentinel.require_user)):
-                ...
-        """
+        """FastAPI dependency returning the authenticated user."""
         return get_current_user
 
     @property
     def get_auth(self) -> Callable:
-        """FastAPI dependency returning a ``RequestAuth`` for the current request.
-
-        The ``RequestAuth`` bundles the authenticated user with token-backed
-        authorization methods (``can``, ``check_action``, ``accessible``),
-        eliminating the need to manually extract and pass JWT tokens.
-
-        Usage::
-
-            @app.post("/artifacts")
-            async def create(auth: RequestAuth = Depends(sentinel.get_auth)):
-                if await auth.can("artifact", artifact_id, "edit"):
-                    ...
-        """
+        """FastAPI dependency returning a ``RequestAuth`` for the current request."""
         return get_request_auth_factory(
             permissions=self.permissions,
             roles=self.roles,
         )
 
     def require_action(self, action: str) -> Callable:
-        """Dependency factory that enforces an RBAC action.
-
-        Usage::
-
-            @router.get("/reports/export")
-            async def export(
-                user: AuthenticatedUser = Depends(sentinel.require_action("reports:export")),
-            ):
-                ...
-        """
+        """Dependency factory that enforces an RBAC action."""
         return _require_action(self.roles, action)
