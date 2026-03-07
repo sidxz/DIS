@@ -59,7 +59,7 @@ export function ServiceApps() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", service_name: "" });
+  const [form, setForm] = useState({ name: "", service_name: "", allowed_origins: "" });
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
   const { data: apps = [], isLoading } = useQuery({
@@ -69,11 +69,17 @@ export function ServiceApps() {
 
   const create = useMutation({
     mutationFn: () =>
-      createServiceApp({ name: form.name, service_name: form.service_name }),
+      createServiceApp({
+        name: form.name,
+        service_name: form.service_name,
+        allowed_origins: form.allowed_origins
+          ? form.allowed_origins.split("\n").map((s) => s.trim()).filter(Boolean)
+          : [],
+      }),
     onSuccess: (result: ServiceAppCreateResponse) => {
       queryClient.invalidateQueries({ queryKey: ["service-apps"] });
       setShowCreate(false);
-      setForm({ name: "", service_name: "" });
+      setForm({ name: "", service_name: "", allowed_origins: "" });
       toast.success("Service registered");
       setRevealKey(result.api_key);
     },
@@ -162,6 +168,17 @@ export function ServiceApps() {
               className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
             />
             <p className="mt-1 text-xs text-zinc-600">Lowercase, hyphens only (e.g. my-backend)</p>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">Allowed Origins</label>
+            <textarea
+              value={form.allowed_origins}
+              onChange={(e) => setForm((f) => ({ ...f, allowed_origins: e.target.value }))}
+              placeholder={"https://app.example.com\nhttps://staging.example.com"}
+              rows={3}
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+            <p className="mt-1 text-xs text-zinc-600">One origin per line. Required for browser-direct authz mode.</p>
           </div>
           {create.isError && (
             <div className="text-xs text-red-400">{(create.error as Error).message}</div>
