@@ -158,6 +158,8 @@ class Sentinel:
             resp = await client.get(f"{self.base_url}/.well-known/jwks.json")
             resp.raise_for_status()
             jwks = resp.json()
+        if not jwks.get("keys"):
+            raise RuntimeError("No keys found in Sentinel JWKS response")
         key_data = jwks["keys"][0]
         pub_key = RSAAlgorithm.from_jwk(key_data)
         from cryptography.hazmat.primitives.serialization import (

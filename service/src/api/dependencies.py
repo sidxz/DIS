@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, decode_token
+from src.auth.jwt import _AUD_ACCESS, _AUD_ADMIN, _AUD_AUTHZ, decode_token
 from src.database import get_db
 
 
@@ -75,6 +75,50 @@ async def get_current_user(request: Request) -> CurrentUser:
 
         if await is_user_deactivated(user_id):
             raise HTTPException(status_code=401, detail="User account is deactivated")
+
+    return CurrentUser(
+        user_id=uuid.UUID(payload["sub"]),
+        workspace_id=uuid.UUID(payload["wid"]),
+        workspace_role=payload["wrole"],
+        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+    )
+
+
+async def get_user_for_service_call(request: Request) -> CurrentUser:
+    """Extract user context from Bearer JWT — accepts access or authz tokens.
+
+    Use this ONLY on endpoints that also require service key auth (dual-auth).
+    In proxy mode, services forward the user's access token.
+    In authz mode, services forward the authz token instead.
+    The service key establishes trust; this just extracts user identity.
+    """
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.removeprefix("Bearer ")
+    try:
+        payload = decode_token(token, audience=[_AUD_ACCESS, _AUD_AUTHZ])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    token_type = payload.get("type")
+    if token_type not in ("access", "authz"):
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    # For access tokens, check revocation and deactivation
+    if token_type == "access":
+        if jti := payload.get("jti"):
+            from src.services.token_service import is_access_token_blacklisted
+
+            if await is_access_token_blacklisted(jti):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
+
+        user_id = payload.get("sub")
+        if user_id:
+            from src.services.token_service import is_user_deactivated
+
+            if await is_user_deactivated(user_id):
+                raise HTTPException(status_code=401, detail="User account is deactivated")
 
     return CurrentUser(
         user_id=uuid.UUID(payload["sub"]),

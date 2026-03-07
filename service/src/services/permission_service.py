@@ -33,7 +33,7 @@ async def register_resource(
         )
     )
     await db.execute(stmt)
-    await db.flush()
+    await db.commit()
     # Re-fetch to return the existing or newly inserted record
     return await get_resource_permission(db, service_name, resource_type, resource_id)
 

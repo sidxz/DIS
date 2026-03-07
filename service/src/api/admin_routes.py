@@ -816,6 +816,31 @@ async def share_permission(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate grantee belongs to the same workspace as the resource
+    perm = await permission_service.get_permission_by_id(db, permission_id)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    if body.grantee_type == "user":
+        from src.models.workspace import WorkspaceMembership
+
+        stmt = select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == perm.workspace_id,
+            WorkspaceMembership.user_id == body.grantee_id,
+        )
+        result = await db.execute(stmt)
+        if not result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail="Grantee user is not a member of the resource's workspace",
+            )
+    elif body.grantee_type == "group":
+        grp = await db.get(Group, body.grantee_id)
+        if not grp or grp.workspace_id != perm.workspace_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Grantee group does not belong to the resource's workspace",
+            )
+
     actor_id = uuid.UUID(admin["sub"])
     try:
         await permission_service.share_resource(
@@ -1307,6 +1332,7 @@ async def update_service_app(
     )
     await db.commit()
     await db.refresh(app)
+    await refresh_origins(db)
     return app
 
 
@@ -1369,6 +1395,7 @@ async def delete_service_app(
     )
     await service_app_service.delete_service_app(db, app_id)
     await db.commit()
+    await refresh_origins(db)
 
 
 # ── CSV Import ────────────────────────────────────────────────────────

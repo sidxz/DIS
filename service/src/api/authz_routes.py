@@ -127,6 +127,7 @@ async def resolve(
         workspace_slug=workspace.slug,
         workspace_role=membership.role,
         actions=actions,
+        service_name=service_ctx.service_name,
     )
 
     return AuthzResolveResponse(

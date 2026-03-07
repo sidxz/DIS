@@ -101,12 +101,14 @@ def create_authz_token(
     workspace_slug: str,
     workspace_role: str,
     actions: list[str],
+    service_name: str,
 ) -> str:
     """Create a short-lived authorization-only JWT.
 
     This token carries workspace role and RBAC actions but NOT identity.
     Identity is proven by the IdP token (validated separately).
     The idp_sub claim binds this token to a specific IdP identity.
+    The svc claim binds the token to a specific service (prevents cross-service replay).
     """
     now = datetime.now(UTC)
     payload = {
@@ -114,6 +116,7 @@ def create_authz_token(
         "sub": str(user_id),
         "jti": str(uuid.uuid4()),  # Security: jti enables revocation via denylist
         "idp_sub": idp_sub,
+        "svc": service_name,
         "wid": str(workspace_id),
         "wslug": workspace_slug,
         "wrole": workspace_role,

@@ -108,6 +108,8 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
                 resp = await client.get(self.jwks_url)
                 resp.raise_for_status()
                 jwks = resp.json()
+            if not jwks.get("keys"):
+                raise RuntimeError("No keys found in JWKS response")
             for key in jwks["keys"]:
                 if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
                     self.public_key = RSAAlgorithm.from_jwk(key)
@@ -115,8 +117,11 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             raise RuntimeError("No RSA signing key found in JWKS")
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        # Skip auth for excluded paths
-        if any(request.url.path.startswith(p) for p in self.exclude_paths):
+        # Skip auth for excluded paths (exact match or path prefix with boundary)
+        if any(
+            request.url.path == p or request.url.path.startswith(p + "/")
+            for p in self.exclude_paths
+        ):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

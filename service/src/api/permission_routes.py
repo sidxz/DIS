@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import (
     CurrentUser,
     ServiceKeyContext,
-    get_current_user,
+    get_user_for_service_call,
     require_service_key,
     verify_service_scope,
 )
@@ -37,7 +37,7 @@ router = APIRouter(prefix="/permissions", tags=["permissions"])
 async def check_permissions(
     body: PermissionCheckRequest,
     svc: ServiceKeyContext = Depends(require_service_key),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_user_for_service_call),
     db: AsyncSession = Depends(get_db),
 ):
     for item in body.checks:
@@ -71,7 +71,7 @@ async def check_permissions(
 async def accessible_resources(
     body: AccessibleResourcesRequest,
     svc: ServiceKeyContext = Depends(require_service_key),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_user_for_service_call),
     db: AsyncSession = Depends(get_db),
 ):
     verify_service_scope(svc, body.service_name)
@@ -104,7 +104,7 @@ async def share_resource(
     permission_id: uuid.UUID,
     body: ShareRequest,
     svc: ServiceKeyContext = Depends(require_service_key),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_user_for_service_call),
     db: AsyncSession = Depends(get_db),
 ):
     # Verify service scope via the permission's service_name

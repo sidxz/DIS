@@ -77,6 +77,7 @@ async def lifespan(app: FastAPI):
     _redis_down = False
     _redis_no_auth = False
     _redis_no_tls = False
+    _redis_no_cert_verify = False
     try:
         from src.services.token_service import get_redis
 
@@ -86,6 +87,8 @@ async def lifespan(app: FastAPI):
             _redis_no_auth = True
         if not settings.redis_url.startswith("rediss://"):
             _redis_no_tls = True
+        elif settings.redis_tls_verify != "required":
+            _redis_no_cert_verify = True
     except Exception:
         _redis_down = True
 
@@ -110,6 +113,10 @@ async def lifespan(app: FastAPI):
         if _redis_no_tls:
             logger.warning(
                 "Redis URL is not using TLS — use rediss:// if Redis is outside a trusted network"
+            )
+        if _redis_no_cert_verify:
+            logger.warning(
+                "Redis TLS certificate verification is disabled — set REDIS_TLS_VERIFY=required in production"
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(
