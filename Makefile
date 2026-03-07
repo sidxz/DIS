@@ -1,26 +1,79 @@
+SHELL := /bin/bash
 .PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release pentest pentest-custom pentest-setup
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
-setup: ## First-time setup: generates keys, installs deps, starts DB
-	@mkdir -p keys
+setup: ## One-time setup: keys, TLS certs, env files, deps, dev containers
+	@mkdir -p keys/tls
+	@# ── JWT signing keys ──────────────────────────────────────────────
 	@if [ ! -f keys/private.pem ]; then \
 		openssl genrsa -out keys/private.pem 2048 2>/dev/null && \
 		openssl rsa -in keys/private.pem -pubout -out keys/public.pem 2>/dev/null && \
-		echo "Generated JWT keys"; \
+		echo "✓ Generated JWT keys (keys/)"; \
 	else \
-		echo "JWT keys already exist"; \
+		echo "· JWT keys already exist"; \
 	fi
+	@# ── TLS certs for Postgres + Redis (internal CA + server cert) ──
+	@if [ ! -f keys/tls/ca.crt ]; then \
+		openssl req -x509 -newkey rsa:2048 \
+			-keyout keys/tls/ca.key -out keys/tls/ca.crt \
+			-days 3650 -nodes -subj "/CN=Sentinel Internal CA" 2>/dev/null && \
+		openssl req -newkey rsa:2048 \
+			-keyout keys/tls/server.key -out /tmp/sentinel-server.csr \
+			-nodes -subj "/CN=sentinel-internal" 2>/dev/null && \
+		openssl x509 -req -in /tmp/sentinel-server.csr \
+			-CA keys/tls/ca.crt -CAkey keys/tls/ca.key -CAcreateserial \
+			-out keys/tls/server.crt -days 3650 \
+			-extfile <(printf "subjectAltName=DNS:localhost,DNS:postgres,DNS:redis,IP:127.0.0.1") 2>/dev/null && \
+		rm -f /tmp/sentinel-server.csr keys/tls/ca.srl && \
+		chmod 600 keys/tls/server.key keys/tls/ca.key && \
+		echo "✓ Generated TLS certs (keys/tls/)"; \
+	else \
+		echo "· TLS certs already exist"; \
+	fi
+	@# ── Dev env (service/.env) ──────────────────────────────────────
+	@if [ ! -f service/.env ]; then \
+		SESSION_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		sed "s|^JWT_PRIVATE_KEY_PATH=.*|JWT_PRIVATE_KEY_PATH=../keys/private.pem|; \
+		     s|^JWT_PUBLIC_KEY_PATH=.*|JWT_PUBLIC_KEY_PATH=../keys/public.pem|; \
+		     s|^SESSION_SECRET_KEY=.*|SESSION_SECRET_KEY=$$SESSION_KEY|; \
+		     s|^REDIS_TLS_CA_CERT=.*|REDIS_TLS_CA_CERT=../keys/tls/ca.crt|" \
+		  .env.dev.example > service/.env && \
+		echo "✓ Created service/.env"; \
+	else \
+		echo "· service/.env already exists"; \
+	fi
+	@# ── Prod env (.env.prod) ────────────────────────────────────────
+	@if [ ! -f .env.prod ]; then \
+		PG_PASS=$$(openssl rand -base64 24); \
+		REDIS_PASS=$$(openssl rand -base64 24); \
+		SESSION_KEY=$$(python3 -c "import secrets; print(secrets.token_urlsafe(32))"); \
+		sed "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$$PG_PASS|; \
+		     s|^REDIS_PASSWORD=.*|REDIS_PASSWORD=$$REDIS_PASS|; \
+		     s|^SESSION_SECRET_KEY=.*|SESSION_SECRET_KEY=$$SESSION_KEY|" \
+		  .env.prod.example > .env.prod && \
+		echo "✓ Created .env.prod (random passwords + session secret)"; \
+	else \
+		echo "· .env.prod already exists"; \
+	fi
+	@# ── Dev dependencies + containers ───────────────────────────────
 	uv sync && cd service && uv sync
 	cd admin && npm install
 	docker compose up -d identity-postgres identity-redis
 	@until [ "$$(docker compose ps identity-postgres --format '{{.Health}}')" = "healthy" ]; do sleep 1; done
 	@echo ""
 	@echo "Setup complete!"
-	@echo "  make start   - start identity service (:9003)"
-	@echo "  make admin   - start admin UI (:9004)"
-	@echo "  make seed    - populate with test data (optional)"
+	@echo ""
+	@echo "  Next:"
+	@echo "    1. vim service/.env   — add OAuth creds (GOOGLE_*, GITHUB_*, etc.) + ADMIN_EMAILS"
+	@echo "    2. make start         — start identity service (:9003)"
+	@echo "    3. make admin         — start admin UI (:9004)"
+	@echo "    make seed             — populate with test data (optional)"
+	@echo ""
+	@echo "  Prod:"
+	@echo "    vim .env.prod   — set BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS"
+	@echo "    docker stack deploy -c docker-compose.prod.yml sentinel"
 
 start: ## Start identity service (:9003) — auto-migrates on boot
 	cd service && uv run uvicorn src.main:app --port 9003 --reload
@@ -56,8 +109,9 @@ docs-serve: ## Serve documentation site with live reload
 clean: ## Stop containers and wipe database
 	docker compose down -v
 
-nuke: clean ## Full reset: wipe everything including deps and keys
-	rm -rf keys/ .venv service/.venv sdk/.venv admin/node_modules
+nuke: clean ## Full reset: wipe everything including deps, keys, and env files
+	rm -rf keys/ .venv service/.venv sdk/.venv admin/node_modules sdks/*/node_modules
+	rm -f service/.env .env.prod
 	@echo "Run 'make setup' to start fresh."
 
 release: ## Release all packages (usage: make release VERSION=0.6.0)

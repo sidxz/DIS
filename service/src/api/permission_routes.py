@@ -1,5 +1,6 @@
 import uuid
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,8 @@ from src.schemas.permission import (
     UpdateVisibilityRequest,
 )
 from src.services import permission_service
+
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])
 
@@ -110,6 +113,17 @@ async def share_resource(
         raise HTTPException(status_code=404, detail="Permission not found")
     verify_service_scope(svc, perm.service_name)
 
+    # Ownership check: workspace isolation + owner or admin
+    if perm.workspace_id != user.workspace_id:
+        raise HTTPException(
+            status_code=403, detail="Cross-workspace sharing not allowed"
+        )
+    if perm.owner_id != user.user_id and user.workspace_role not in ("owner", "admin"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the resource owner or workspace admin can share",
+        )
+
     await permission_service.share_resource(
         db,
         permission_id=permission_id,
@@ -140,6 +154,14 @@ async def register_resource(
         owner_id=body.owner_id,
         visibility=body.visibility,
     )
+    logger.info(
+        "permission_registered",
+        service=svc.service_name,
+        resource_type=body.resource_type,
+        resource_id=str(body.resource_id),
+        workspace_id=str(body.workspace_id),
+        owner_id=str(body.owner_id),
+    )
     return perm
 
 
@@ -154,9 +176,16 @@ async def update_visibility(
     if not perm:
         raise HTTPException(status_code=404, detail="Permission not found")
     verify_service_scope(svc, perm.service_name)
-    return await permission_service.update_visibility(
+    result = await permission_service.update_visibility(
         db, permission_id, body.visibility
     )
+    logger.info(
+        "permission_visibility_updated",
+        service=svc.service_name,
+        permission_id=str(permission_id),
+        visibility=body.visibility,
+    )
+    return result
 
 
 @router.delete("/{permission_id}/share")
@@ -175,6 +204,13 @@ async def revoke_share(
         permission_id=permission_id,
         grantee_type=body.grantee_type,
         grantee_id=body.grantee_id,
+    )
+    logger.info(
+        "permission_share_revoked",
+        service=svc.service_name,
+        permission_id=str(permission_id),
+        grantee_type=body.grantee_type,
+        grantee_id=str(body.grantee_id),
     )
     return {"status": "ok"}
 

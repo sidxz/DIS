@@ -4,6 +4,7 @@ import time
 import uuid
 from datetime import datetime
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select, text
@@ -75,9 +76,10 @@ from src.services import (
     service_app_service,
 )
 from src.middleware.cors import refresh_origins
+from src.middleware.rate_limit import limiter
 from src.services import token_service
 
-_ADMIN_RATE_LIMIT = "30/minute"
+logger = structlog.get_logger()
 
 router = APIRouter(
     prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)]
@@ -166,7 +168,10 @@ async def system_health(
 
 
 @router.get("/system/settings", response_model=SystemSettingsResponse)
-async def system_settings(db: AsyncSession = Depends(get_db)):
+async def system_settings(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     # OAuth providers
     providers = [
         {"name": "google", "configured": bool(settings.google_client_id)},
@@ -231,6 +236,15 @@ async def system_settings(db: AsyncSession = Depends(get_db)):
         "admin_url": settings.admin_url,
     }
 
+    await activity_service.log_activity(
+        db,
+        action="view_system_settings",
+        target_type="system",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
+
     return SystemSettingsResponse(
         oauth_providers=providers,
         jwt=jwt_info,
@@ -245,7 +259,9 @@ async def system_settings(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/users/bulk-status")
+@limiter.limit("5/minute")
 async def bulk_user_status(
+    request: Request,
     body: BulkUserStatusRequest,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -347,12 +363,15 @@ async def add_user_to_workspace(
             actor_id=uuid.UUID(admin["sub"]),
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("add_user_to_workspace failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to add user to workspace")
     return {"status": "ok"}
 
 
 @router.post("/users/{user_id}/revoke-tokens")
+@limiter.limit("10/minute")
 async def revoke_user_tokens(
+    request: Request,
     user_id: uuid.UUID,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -403,7 +422,8 @@ async def create_workspace(
             description=body.description,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("create_workspace failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to create workspace")
 
     await activity_service.log_activity(
         db,
@@ -683,7 +703,8 @@ async def add_group_member(
     try:
         await group_service.add_member(db, group_id, grp.workspace_id, user_id)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("add_group_member failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to add group member")
 
     await activity_service.log_activity(
         db,
@@ -806,7 +827,8 @@ async def share_permission(
             actor_id,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("share_permission failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to share permission")
 
     await activity_service.log_activity(
         db,
@@ -823,7 +845,7 @@ async def share_permission(
 @router.delete("/permissions/{permission_id}/share")
 async def revoke_permission_share(
     permission_id: uuid.UUID,
-    grantee_type: str = Query(...),
+    grantee_type: str = Query(..., pattern=r"^(user|group)$"),
     grantee_id: uuid.UUID = Query(...),
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1038,7 +1060,8 @@ async def assign_role_member(
             db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"])
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("assign_user_role failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to assign role")
 
     await activity_service.log_activity(
         db,
@@ -1186,7 +1209,9 @@ async def list_service_apps(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/service-apps", response_model=ServiceAppCreateResponse, status_code=201)
+@limiter.limit("5/minute")
 async def create_service_app(
+    request: Request,
     body: ServiceAppCreateRequest,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1197,7 +1222,8 @@ async def create_service_app(
             db, name=body.name, service_name=body.service_name, created_by=actor_id
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        logger.error("create_service_app failed", error=str(e), exc_info=True)
+        raise HTTPException(status_code=400, detail="Failed to create service app")
 
     await activity_service.log_activity(
         db,
@@ -1264,7 +1290,9 @@ async def update_service_app(
 @router.post(
     "/service-apps/{app_id}/rotate-key", response_model=ServiceAppCreateResponse
 )
+@limiter.limit("3/minute")
 async def rotate_service_app_key(
+    request: Request,
     app_id: uuid.UUID,
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1338,7 +1366,9 @@ async def csv_preview(file: UploadFile = File(...)):
 
 
 @router.post("/import/csv/execute", response_model=CsvImportResult)
+@limiter.limit("5/minute")
 async def csv_execute(
+    request: Request,
     file: UploadFile = File(...),
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
@@ -1356,7 +1386,10 @@ async def csv_execute(
 
 
 @router.get("/export/users")
-async def export_users(db: AsyncSession = Depends(get_db)):
+async def export_users(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(User, func.count(WorkspaceMembership.id).label("workspace_count"))
         .outerjoin(WorkspaceMembership, User.id == WorkspaceMembership.user_id)
@@ -1398,6 +1431,15 @@ async def export_users(db: AsyncSession = Depends(get_db)):
             output.seek(0)
             output.truncate(0)
 
+    await activity_service.log_activity(
+        db,
+        action="export_users",
+        target_type="export",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
+
     return StreamingResponse(
         generate(),
         media_type="text/csv",
@@ -1406,7 +1448,10 @@ async def export_users(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/export/workspaces")
-async def export_workspaces(db: AsyncSession = Depends(get_db)):
+async def export_workspaces(
+    admin: dict = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
     stmt = (
         select(Workspace, func.count(WorkspaceMembership.id).label("member_count"))
         .outerjoin(
@@ -1449,6 +1494,15 @@ async def export_workspaces(db: AsyncSession = Depends(get_db)):
             yield output.getvalue()
             output.seek(0)
             output.truncate(0)
+
+    await activity_service.log_activity(
+        db,
+        action="export_workspaces",
+        target_type="export",
+        target_id=uuid.UUID(int=0),
+        actor_id=uuid.UUID(admin["sub"]),
+    )
+    await db.commit()
 
     return StreamingResponse(
         generate(),

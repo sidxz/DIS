@@ -1,6 +1,6 @@
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TokenResponse(BaseModel):
@@ -31,7 +31,7 @@ class ProviderListResponse(BaseModel):
 class SelectWorkspaceRequest(BaseModel):
     code: str
     workspace_id: uuid.UUID
-    code_verifier: str
+    code_verifier: str = Field(min_length=43, max_length=128)
 
 
 class WorkspaceOptionResponse(BaseModel):

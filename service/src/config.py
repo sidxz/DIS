@@ -11,11 +11,13 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = (
-        "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity"
+        "postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require"
     )
 
     # Redis
-    redis_url: str = "redis://localhost:9002/0"
+    redis_url: str = "rediss://:sentinel_dev@localhost:9002/0"
+    redis_tls_ca_cert: str = ""  # Path to CA cert for Redis TLS (e.g. keys/tls/ca.crt)
+    redis_tls_verify: str = "none"  # "none" | "required" — set "required" in production
 
     # JWT
     jwt_private_key_path: Path = Path("keys/private.pem")
@@ -49,11 +51,31 @@ class Settings(BaseSettings):
     # Security
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
-    debug: bool = True  # Set False in production (disables /docs, /redoc)
+    debug: bool = False  # Set True for local development (enables /docs, /redoc)
+    behind_proxy: bool = (
+        False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
+    )
 
     # Admin
     admin_emails: str = ""
     admin_url: str = "http://localhost:9004"
+
+    @property
+    def redis_ssl_kwargs(self) -> dict:
+        """Extra kwargs for redis.from_url() when using rediss:// scheme."""
+        if not self.redis_url.startswith("rediss://"):
+            return {}
+        import ssl as _ssl
+
+        kwargs: dict = {}
+        if self.redis_tls_ca_cert:
+            kwargs["ssl_ca_certs"] = self.redis_tls_ca_cert
+        kwargs["ssl_cert_reqs"] = (
+            _ssl.CERT_REQUIRED
+            if self.redis_tls_verify == "required"
+            else _ssl.CERT_NONE
+        )
+        return kwargs
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -75,7 +97,11 @@ class Settings(BaseSettings):
             parsed = urlparse(url)
             if parsed.hostname:
                 hosts.add(parsed.hostname)
-        return list(hosts) if hosts else ["*"]
+        if not hosts:
+            # No hosts derived — allow all in dev, but startup check
+            # will reject this in production (DEBUG=False)
+            return ["*"]
+        return list(hosts)
 
 
 settings = Settings()

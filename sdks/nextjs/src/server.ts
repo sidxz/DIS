@@ -8,13 +8,14 @@ import type { SentinelUser, WorkspaceRole } from '@sentinel-auth/js'
 export async function getUser(): Promise<SentinelUser | null> {
   const h = await headers()
   const userId = h.get('x-sentinel-user-id')
-  if (!userId) return null
+  const workspaceId = h.get('x-sentinel-workspace-id')
+  if (!userId || !workspaceId) return null
 
   return {
     userId,
     email: h.get('x-sentinel-email') ?? '',
     name: h.get('x-sentinel-name') ?? '',
-    workspaceId: h.get('x-sentinel-workspace-id') ?? '',
+    workspaceId,
     workspaceSlug: h.get('x-sentinel-workspace-slug') ?? '',
     workspaceRole: (h.get('x-sentinel-workspace-role') ?? 'viewer') as WorkspaceRole,
     groups: [],

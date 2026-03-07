@@ -90,3 +90,11 @@ class WorkspaceContext:
     workspace_slug: str
     user_id: uuid.UUID
     role: str
+
+
+class SentinelError(Exception):
+    """Raised when the Sentinel identity service returns an error or is unreachable."""
+
+    def __init__(self, message: str, status_code: int | None = None):
+        self.status_code = status_code
+        super().__init__(message)

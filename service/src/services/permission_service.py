@@ -16,6 +16,12 @@ async def register_resource(
     owner_id: uuid.UUID,
     visibility: str = "workspace",
 ) -> ResourcePermission:
+    # Idempotent: return existing if already registered
+    existing = await get_resource_permission(
+        db, service_name, resource_type, resource_id
+    )
+    if existing:
+        return existing
     perm = ResourcePermission(
         service_name=service_name,
         resource_type=resource_type,
@@ -26,6 +32,7 @@ async def register_resource(
     )
     db.add(perm)
     await db.commit()
+    await db.refresh(perm, attribute_names=["shares"])
     return perm
 
 
@@ -33,7 +40,13 @@ async def get_permission_by_id(
     db: AsyncSession,
     permission_id: uuid.UUID,
 ) -> ResourcePermission | None:
-    return await db.get(ResourcePermission, permission_id)
+    stmt = (
+        select(ResourcePermission)
+        .options(selectinload(ResourcePermission.shares))
+        .where(ResourcePermission.id == permission_id)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
 
 
 async def get_resource_permission(

@@ -3,7 +3,8 @@ from importlib.metadata import version
 from sentinel_auth.middleware import JWTAuthMiddleware
 from sentinel_auth.permissions import PermissionClient
 from sentinel_auth.roles import RoleClient
-from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
+from sentinel_auth.sentinel import Sentinel
+from sentinel_auth.types import AuthenticatedUser, SentinelError, WorkspaceContext
 
 __version__ = version("sentinel-auth-sdk")
 __all__ = [
@@ -11,6 +12,8 @@ __all__ = [
     "JWTAuthMiddleware",
     "PermissionClient",
     "RoleClient",
+    "Sentinel",
+    "SentinelError",
     "WorkspaceContext",
     "__version__",
 ]

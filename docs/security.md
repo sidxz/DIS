@@ -17,6 +17,9 @@ The service applies middleware in a specific order (outermost first):
 Request
   |
   v
+MaxBodySizeMiddleware        -- reject requests > 10 MB
+  |
+  v
 GlobalRateLimitMiddleware    -- 30 req/min per IP (all endpoints)
   |
   v
@@ -61,10 +64,10 @@ Every response includes the following headers, set by `SecurityHeadersMiddleware
 When `COOKIE_SECURE=true` (production with HTTPS), the service adds:
 
 ```
-Strict-Transport-Security: max-age=63072000; includeSubDomains
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
 ```
 
-This enforces HTTPS for two years and covers all subdomains. Only enable this when your deployment is fully behind TLS.
+This enforces HTTPS for two years, covers all subdomains, and is eligible for the [HSTS preload list](https://hstspreload.org/). Only enable this when your deployment is fully behind TLS.
 
 ### Session Middleware
 
@@ -220,7 +223,7 @@ After a successful OAuth callback, the service issues a short-lived authorizatio
 
 | Key Pattern | Value | TTL |
 |-------------|-------|-----|
-| `ac:{code}` | JSON `{user_id, code_challenge, code_challenge_method}` | 5 minutes |
+| `ac:{code}` | JSON `{user_id, provider, code_challenge, code_challenge_method}` | 5 minutes |
 
 ### Access Token Revocation
 
@@ -275,12 +278,13 @@ Keys are validated by `service_app_service.validate_key()`, which checks the SHA
 
 ### Behavior
 
-| Service Apps in DB | Request Without Key | Request With Invalid Key | Request With Valid Key |
-|--------------------|--------------------|--------------------------|-----------------------|
-| None active (dev mode) | Allowed | Allowed | Allowed |
-| At least one active (production) | 401 Unauthorized | 401 Unauthorized | Allowed |
+| Request | Result |
+|---------|--------|
+| No `X-Service-Key` header | 401 Unauthorized |
+| Invalid key | 401 Unauthorized |
+| Valid key (active service app) | Allowed — `ServiceKeyContext.service_name` is set |
 
-**Dev mode** is intentionally permissive: when no active service apps exist in the database, the `require_service_key` dependency passes through all requests. This allows local development without configuring keys. In production, register at least one service app via the admin panel.
+Service keys are always enforced, regardless of `DEBUG` mode. Register at least one service app via the admin panel (`/admin/service-apps`) before consuming service-key-protected endpoints.
 
 ### Dual Auth (Service Key + User JWT)
 
@@ -316,15 +320,24 @@ COOKIE_SECURE=true
 
 When `COOKIE_SECURE=true`, the `Secure` flag ensures the cookie is only sent over HTTPS connections. Additionally, this flag enables HSTS headers on all responses.
 
+### CSRF Protection
+
+The admin panel uses two layers of CSRF defense:
+
+1. **SameSite=Strict cookie** -- the `admin_token` cookie is never sent on cross-site requests
+2. **Custom header requirement** -- all state-changing requests (POST, PATCH, PUT, DELETE) to `/admin/*` must include an `X-Requested-With` header. This header cannot be set by cross-origin HTML forms or image tags, and CORS preflight blocks cross-origin JavaScript from adding it.
+
+The admin SPA automatically includes `X-Requested-With: XMLHttpRequest` on all requests. Requests without this header on mutation endpoints receive a `403 Forbidden`.
+
 ---
 
 ## Rate Limiting
 
 Rate limiting uses two layers:
 
-1. **Global rate limit** — `GlobalRateLimitMiddleware` enforces **30 requests/minute per IP** across all endpoints (except `/health`). This is a simple in-memory sliding window that catches broad abuse regardless of endpoint.
+1. **Global rate limit** — `GlobalRateLimitMiddleware` enforces **30 requests/minute per IP** across all endpoints (except `/health`). Uses a Redis-backed atomic counter (Lua INCR+EXPIRE script).
 
-2. **Per-endpoint limits** — [slowapi](https://github.com/laurentS/slowapi) applies stricter limits on sensitive endpoints. These fire before the global limit.
+2. **Per-endpoint limits** — [slowapi](https://github.com/laurentS/slowapi) applies stricter limits on sensitive endpoints, backed by Redis via `REDIS_URL`. These fire before the global limit.
 
 When a client exceeds either limit, the service responds with `429 Too Many Requests` and a `Retry-After` header.
 
@@ -341,7 +354,10 @@ When a client exceeds either limit, the service responds with `429 Too Many Requ
 | `GET /auth/admin/login/{provider}` | 5/minute | Stricter limit on admin login |
 | `GET /auth/admin/callback/{provider}` | 5/minute | Stricter limit on admin callback |
 
-Rate limit state is keyed by the client's remote IP address. If the service is behind a reverse proxy, ensure `X-Forwarded-For` is configured correctly so the real client IP is used.
+Rate limit state is keyed by the client's remote IP address.
+
+!!! tip "Proxy-aware rate limiting"
+    When `BEHIND_PROXY=true`, the rate limiter extracts the client IP from the `X-Forwarded-For` header instead of the TCP connection address. Set this when deploying behind nginx, Caddy, ALB, or any reverse proxy.
 
 ---
 
@@ -390,9 +406,11 @@ All request bodies are validated with Pydantic models. Invalid input is rejected
 - Enum value constraints (e.g., workspace roles, permission actions)
 - Required vs. optional field enforcement
 
-### CSV Upload Limits
+### Request Body Size Limit
 
-CSV import endpoints (used by the admin panel) enforce a **5 MB file size limit** to prevent denial-of-service via large uploads.
+A global `MaxBodySizeMiddleware` rejects any request with a `Content-Length` exceeding **10 MB**, returning `413 Request Entity Too Large`. This prevents memory exhaustion from oversized payloads.
+
+Additionally, CSV import endpoints (admin panel) enforce a stricter **5 MB file size limit** at the application level.
 
 ---
 
@@ -411,8 +429,43 @@ All security-related environment variables:
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime in minutes |
 | `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime in days |
 | `ADMIN_TOKEN_EXPIRE_MINUTES` | `60` | Admin token lifetime in minutes |
-| `DEBUG` | `true` | Set `false` in production to disable `/docs`, `/redoc`, `/openapi.json` |
+| `DEBUG` | `false` | Set `true` for local development. Enables `/docs`, `/redoc`, `/openapi.json` and relaxes startup validation. |
+| `BEHIND_PROXY` | `false` | Set `true` when behind a reverse proxy. Enables proxy-aware rate limiting via `X-Forwarded-For`. |
 | `ADMIN_EMAILS` | (empty) | Comma-separated emails auto-promoted to admin on login |
+| `REDIS_URL` | `rediss://:sentinel_dev@localhost:9002/0` | Redis connection string. `rediss://` enables TLS. Include password in URL. |
+| `REDIS_TLS_CA_CERT` | `""` | Path to CA cert for Redis TLS verification. Empty = encrypted but no cert verification. |
+
+---
+
+## Startup Validation
+
+When `DEBUG=false`, the service performs fail-closed validation at startup and **refuses to start** if any check fails:
+
+| Check | Condition | Error |
+|-------|-----------|-------|
+| Session secret | Default value unchanged | `SESSION_SECRET_KEY is using the default dev value` |
+| Service apps | No active service apps in DB | `No active service apps registered` |
+| Cookie security | `COOKIE_SECURE=false` | `COOKIE_SECURE is False` |
+| Redis connectivity | Cannot ping Redis | `Redis is unreachable` |
+| Redis authentication | No `@` in `REDIS_URL` | `Redis URL has no authentication` |
+| Redis TLS | URL does not start with `rediss://` | `Redis URL is not using TLS` |
+| Allowed hosts | Resolved to wildcard `*` | `ALLOWED_HOSTS is wildcard` |
+
+In development (`DEBUG=true`), these are logged as warnings instead of blocking startup.
+
+---
+
+## SDK Insecure URL Warnings
+
+All Python and JavaScript SDK clients (`PermissionClient`, `RoleClient`, `JWTAuthMiddleware`, `SentinelAuth`) log a warning when initialized with a plain `http://` URL that does not point to `localhost`, `127.0.0.1`, or `::1`.
+
+This catches accidental production deployments without HTTPS. The warning is informational and does not block requests.
+
+| SDK | Warning mechanism |
+|-----|-------------------|
+| Python (`sentinel-auth-sdk`) | `logging.warning()` via the `sentinel_auth` logger |
+| JS (`@sentinel-auth/js`) | `console.warn()` |
+| Next.js (`@sentinel-auth/nextjs`) | `console.warn()` in `createSentinelMiddleware` |
 
 ---
 
@@ -454,7 +507,7 @@ Ten test suites covering ~110 individual tests:
 | JWT Attacks | Algorithm confusion, token forgery, claim tampering, JWK/KID injection |
 | Admin Bypass | Cookie theft/replay, privilege escalation, token revocation |
 | IDOR & AuthZ | Cross-workspace access, resource ID enumeration, role bypass |
-| Service Key | Dev-mode bypass, key brute-force, missing enforcement |
+| Service Key | Key brute-force, missing enforcement, scope escalation |
 | Rate Limiting | Header spoofing, endpoint flooding, evasion techniques |
 | Injection & XSS | SQL injection, stored XSS, CSV injection, path traversal |
 | Session & OAuth | Session fixation, state tampering, CSRF, redirect manipulation |
@@ -475,15 +528,23 @@ All output is saved to `pentest/reports/`:
 
 Before deploying to production, verify the following:
 
+- [ ] `make setup` run (generates keys, TLS certs, env files with random secrets)
+- [ ] `.env.prod` configured with production `BASE_URL`, `ADMIN_URL`, OAuth credentials
 - [ ] `SESSION_SECRET_KEY` is set to a cryptographically random value (not the default)
 - [ ] At least one service app is registered via the admin panel (`/admin/service-apps`) with a strong key
 - [ ] `COOKIE_SECURE=true` and the service is behind TLS
+- [ ] `DEBUG=false` to disable OpenAPI docs and enable fail-closed startup validation
+- [ ] `BEHIND_PROXY=true` if behind a reverse proxy
 - [ ] `ALLOWED_HOSTS` is set to your actual domain(s), not `*`
 - [ ] `CORS_ORIGINS` lists only your frontend origin(s)
 - [ ] RS256 key pair is generated and `JWT_PRIVATE_KEY_PATH` / `JWT_PUBLIC_KEY_PATH` point to the correct files
 - [ ] The private key file has restrictive permissions (`chmod 600`)
-- [ ] `DEBUG=false` to disable OpenAPI docs (`/docs`, `/redoc`, `/openapi.json`)
+- [ ] TLS certificates generated for Postgres and Redis (`keys/tls/`)
+- [ ] PostgreSQL connection uses SSL (`?ssl=require` in `DATABASE_URL`)
+- [ ] Redis uses TLS (`rediss://`), has a strong password, and is not exposed to the public internet
 - [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
 - [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
-- [ ] Redis is password-protected and not exposed to the public internet
-- [ ] PostgreSQL uses strong credentials and is not exposed to the public internet
+- [ ] Startup validation passes with `DEBUG=false` (all checks green)
+
+---
+

@@ -11,7 +11,7 @@ You need at least one OAuth provider for user authentication. **Google** is the 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
 2. Create an OAuth 2.0 Client ID (application type: **Web application**).
 3. Add `http://localhost:9003/auth/callback/google` as an **Authorized redirect URI**.
-4. Copy the client ID and secret into your `.env`:
+4. Copy the client ID and secret into `service/.env`:
 
 ```dotenv
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
@@ -21,31 +21,28 @@ GOOGLE_CLIENT_SECRET=your-client-secret
 !!! tip "Other providers"
     GitHub and Microsoft EntraID are also supported. See the [Configuration](configuration.md) reference for their environment variables. You can enable multiple providers simultaneously.
 
-## 2. Set the Session Secret
+## 2. Verify the Session Secret
 
-The service uses server-side sessions for the OAuth flow. Generate a secure secret:
+`make setup` generates a random `SESSION_SECRET_KEY` in `service/.env` automatically. If you set up manually, generate one:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Paste the output into your `.env`:
+Paste the output into `service/.env`:
 
 ```dotenv
 SESSION_SECRET_KEY=your-generated-secret-here
 ```
 
-!!! note "Docker users"
-    If you followed the Docker installation path, you already generated this in step 3 of the installation.
-
 !!! danger "Do not skip this in production"
-    The default value (`dev-only-change-me-in-production`) is intentionally insecure. Always set a unique, random secret for any non-local environment.
+    The default value (`dev-only-change-me-in-production`) is intentionally insecure. `make setup` generates a unique value for both dev and prod env files.
 
 ## 3. Start the Service
 
 === "Docker"
 
-    If you followed the Docker installation, the service is already running. After updating your `.env` with OAuth credentials, restart to pick up the changes:
+    If you followed the Docker installation, the service is already running. After updating `.env.prod` with OAuth credentials, restart to pick up the changes:
 
     ```bash
     docker compose -f docker-compose.prod.yml up -d
@@ -67,8 +64,6 @@ curl http://localhost:9003/health
 
 ## 4. Access the Admin Panel
 
-The admin panel is built into the Sentinel container and served at the same port:
-
 === "Docker"
 
     Open [http://localhost:9003/admin](http://localhost:9003/admin) in your browser.
@@ -83,8 +78,8 @@ The admin panel is built into the Sentinel container and served at the same port
 
     Then open [http://localhost:9004](http://localhost:9004).
 
-!!! note "Admin access"
-    Your email must be listed in the `ADMIN_EMAILS` environment variable (comma-separated) to access the admin panel. You can also promote a user with `make create-admin` (from-source only).
+!!! warning "Set ADMIN_EMAILS before first login"
+    Your email must be listed in the `ADMIN_EMAILS` variable in `service/.env` (comma-separated) before you sign in for the first time. `make setup` prints a reminder for this. You can also promote a user with `make create-admin` (from-source only).
 
 Sign in through the admin panel using your OAuth provider to create your initial user account.
 
@@ -105,6 +100,7 @@ Every frontend that authenticates through Sentinel must be registered as a **cli
     curl -X POST http://localhost:9003/admin/client-apps \
       -H "Content-Type: application/json" \
       -H "Cookie: admin_token=YOUR_ADMIN_TOKEN" \
+      -H "X-Requested-With: XMLHttpRequest" \
       -d '{"name": "dev-frontend", "redirect_uris": ["http://localhost:9003/docs"]}'
     ```
 
@@ -119,11 +115,11 @@ If your backend needs to call Sentinel's API (for permissions, roles, or resourc
 
     1. Navigate to **Service Apps** in the sidebar.
     2. Click **Add Service App**.
-    3. Set a name and toggle **Dev Mode** on for local development.
+    3. Set a name and service name for your backend.
     4. Copy the generated `sk_...` key — you'll need it for your backend's `.env`.
 
-!!! tip "Service apps vs. the old `SERVICE_API_KEYS`"
-    Service apps are managed in the database through the admin panel. The `SERVICE_API_KEYS` environment variable is deprecated and only used as a fallback during migration.
+!!! info "Service apps are database-managed"
+    Service API keys are created and managed through the admin panel. There is no environment variable for service keys.
 
 ## 7. Verify the Auth Flow
 
@@ -138,8 +134,11 @@ Exchange it for JWT tokens:
 ```bash
 curl -X POST http://localhost:9003/auth/token \
   -H "Content-Type: application/json" \
-  -d '{"code": "CODE_FROM_REDIRECT", "workspace_id": "YOUR_WS_ID"}'
+  -d '{"code": "CODE_FROM_REDIRECT", "workspace_id": "YOUR_WS_ID", "code_verifier": "YOUR_CODE_VERIFIER"}'
 ```
+
+!!! note "PKCE"
+    The `code_verifier` is required for PKCE validation. In practice, the JS and Python SDKs handle PKCE automatically. For manual testing, generate a `code_verifier` before the login redirect and pass `code_challenge` + `code_challenge_method=S256` as query params.
 
 ## 8. Explore the API
 
@@ -175,9 +174,6 @@ The repository includes a complete demo application ("Team Notes") that showcase
     Before the demo app can authenticate, register a client app with redirect URI `http://localhost:9101/auth/callback` (see step 5 above) and a service app for the demo backend (see step 6).
 
 ```bash
-# Clone the repo if you haven't already
-git clone <repo-url> identity-service && cd identity-service
-
 # Demo backend
 cd demo/backend && uv sync && uv run python -m src.main
 

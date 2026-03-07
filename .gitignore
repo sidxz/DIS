@@ -11,7 +11,10 @@ wheels/
 
 # Secrets
 keys/
-.env
+.env*
+!.env.dev.example
+!.env.prod.example
+!demo/backend/.env.example
 
 # Node
 node_modules/
@@ -19,5 +22,12 @@ node_modules/
 # Archive
 _archive/
 
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/
+
 # MkDocs build output
 site/
+
+local-docs/

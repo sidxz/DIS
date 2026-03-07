@@ -165,22 +165,21 @@ async def callback(
         if provider == "github":
             resp = await client.get("user", token=token)
             profile = resp.json()
-            # GitHub may not return email in profile, fetch from emails endpoint
-            if not profile.get("email"):
-                resp = await client.get("user/emails", token=token)
-                emails = resp.json()
-                primary = next(
-                    (e for e in emails if e.get("primary") and e.get("verified")),
-                    None,
+            # Always validate email via /user/emails (profile email may be unverified)
+            resp = await client.get("user/emails", token=token)
+            emails = resp.json()
+            primary = next(
+                (e for e in emails if e.get("primary") and e.get("verified")),
+                None,
+            )
+            if not primary:
+                return _error_page(
+                    403,
+                    "Email Not Verified",
+                    "Your GitHub account does not have a verified primary email. "
+                    "Please verify your email on GitHub and try again.",
                 )
-                if not primary:
-                    return _error_page(
-                        403,
-                        "Email Not Verified",
-                        "Your GitHub account does not have a verified primary email. "
-                        "Please verify your email on GitHub and try again.",
-                    )
-                profile["email"] = primary["email"]
+            profile["email"] = primary["email"]
             provider_user_id = str(profile["id"])
             email = profile["email"]
             name = profile.get("name") or profile.get("login", "")
@@ -253,6 +252,7 @@ async def callback(
         # Generate auth code and redirect (with PKCE challenge bound to code)
         code = await auth_code_service.create_auth_code(
             user.id,
+            provider=provider,
             client_app_id=client_app.id,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
@@ -319,6 +319,11 @@ async def select_workspace_and_issue_tokens(
             status_code=400, detail="Invalid or expired authorization code"
         )
 
+    # Defense-in-depth: validate provider matches a configured IdP
+    stored_provider = code_data.get("provider")
+    if stored_provider and stored_provider not in get_configured_providers():
+        raise HTTPException(status_code=400, detail="Invalid authorization code")
+
     # PKCE verification — code_challenge is always present (mandatory)
     stored_challenge = code_data.get("code_challenge")
     challenge_method = code_data.get("code_challenge_method", "S256")
@@ -349,8 +354,10 @@ async def select_workspace_and_issue_tokens(
         tokens = await auth_service.issue_tokens(
             db, user, workspace.id, workspace.slug, client_app_id=client_app_id
         )
-    except ValueError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError:
+        raise HTTPException(
+            status_code=403, detail="Cannot issue tokens for this workspace"
+        )
 
     return tokens
 
@@ -364,11 +371,9 @@ async def refresh_token(
 ):
     try:
         tokens = await auth_service.rotate_refresh_token(db, body.refresh_token)
-    except Exception as e:
-        raise HTTPException(
-            status_code=401,
-            detail=str(e) if isinstance(e, ValueError) else "Invalid refresh token",
-        )
+    except Exception:
+        logger.error("refresh token rotation failed", exc_info=True)
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
     return tokens
 
 
@@ -377,17 +382,18 @@ async def logout(
     request: Request,
     user: CurrentUser = Depends(get_current_user),
 ):
-    # Blacklist the current access token
+    # Revoke all refresh token families using identity from already-validated JWT
+    await token_service.revoke_all_user_tokens(str(user.user_id))
+
+    # Best-effort: blacklist this specific access token's jti
     auth_header = request.headers.get("Authorization", "")
     token_str = auth_header.removeprefix("Bearer ")
     try:
         payload = decode_token(token_str, audience="sentinel:access")
         if jti := payload.get("jti"):
             await token_service.blacklist_access_token(jti, payload["exp"])
-        # Revoke all refresh token families for this user
-        await token_service.revoke_all_user_tokens(payload["sub"])
     except Exception:
-        pass  # Token already expired or invalid — still log out
+        pass  # Token already expired — jti blacklisting not needed
     return {"ok": True}
 
 
@@ -427,19 +433,19 @@ async def admin_callback(
         if provider == "github":
             resp = await client.get("user", token=token)
             profile = resp.json()
-            if not profile.get("email"):
-                resp = await client.get("user/emails", token=token)
-                emails = resp.json()
-                primary = next(
-                    (e for e in emails if e.get("primary") and e.get("verified")),
-                    None,
+            # Always validate email via /user/emails (profile email may be unverified)
+            resp = await client.get("user/emails", token=token)
+            emails = resp.json()
+            primary = next(
+                (e for e in emails if e.get("primary") and e.get("verified")),
+                None,
+            )
+            if not primary:
+                return RedirectResponse(
+                    url=f"{settings.admin_url}/login?error=email_not_verified",
+                    status_code=302,
                 )
-                if not primary:
-                    return RedirectResponse(
-                        url=f"{settings.admin_url}/login?error=email_not_verified",
-                        status_code=302,
-                    )
-                profile["email"] = primary["email"]
+            profile["email"] = primary["email"]
             provider_user_id = str(profile["id"])
             email = profile["email"]
             name = profile.get("name") or profile.get("login", "")
@@ -490,14 +496,14 @@ async def admin_callback(
             user_id=user.id, email=user.email, name=user.name
         )
         response = RedirectResponse(url=f"{settings.admin_url}/", status_code=302)
-        response.set_cookie(
-            key="admin_token",
-            value=admin_token,
+        _cookie_opts = dict(
             httponly=True,
             secure=settings.cookie_secure,
             samesite="strict",
             max_age=3600,
-            path="/",
+        )
+        response.set_cookie(
+            key="admin_token", value=admin_token, path="/", **_cookie_opts
         )
         return response
     except HTTPException:

@@ -127,19 +127,24 @@ const unsubscribe = auth.onAuthStateChange((user) => {
 
 ## Token Storage
 
-The SDK provides two storage backends:
+The SDK provides three storage backends:
 
-| Backend | Use Case |
-|---------|----------|
-| `LocalStorageStore` (default) | Browser apps -- persists across tabs and sessions |
-| `MemoryStore` | SSR, testing, or when localStorage is unavailable |
+| Backend | Use Case | XSS Exposure |
+|---------|----------|--------------|
+| `LocalStorageStore` (default) | Browser apps -- persists across tabs and sessions | Tokens accessible until explicitly cleared |
+| `SessionStorageStore` | Browser apps -- cleared when the tab closes | Limited to current tab lifetime |
+| `MemoryStore` | SSR, testing, or when localStorage is unavailable | Tokens lost on page refresh |
+
+!!! warning "XSS and token storage"
+    All browser-side storage is accessible to JavaScript. If your app is vulnerable to XSS, an attacker can steal tokens regardless of which store you use. `SessionStorageStore` limits the blast radius (tokens are cleared when the tab closes), while `LocalStorageStore` persists tokens across sessions. Choose based on your security posture vs. user experience needs.
 
 ```typescript
-import { SentinelAuth, MemoryStore } from '@sentinel-auth/js'
+import { SentinelAuth, SessionStorageStore } from '@sentinel-auth/js'
 
+// Use sessionStorage for reduced XSS exposure
 const auth = new SentinelAuth({
   sentinelUrl: 'http://localhost:9003',
-  storage: new MemoryStore(),
+  storage: new SessionStorageStore(),
 })
 ```
 
@@ -152,6 +157,16 @@ Call `destroy()` when the client is no longer needed (e.g., on component unmount
 ```typescript
 auth.destroy() // Clears refresh timer, removes listeners
 ```
+
+## HTTPS in Production
+
+The JS SDK logs a console warning if `sentinelUrl` uses plain `http://` with a non-localhost host. This is a reminder, not a hard error — but **all production traffic to Sentinel must use HTTPS** to protect tokens and credentials in transit.
+
+!!! warning "Insecure connection warning"
+    ```
+    [sentinel-auth] Connecting over plain HTTP to identity.example.com.
+    Use HTTPS in production to protect tokens and credentials.
+    ```
 
 ## Next Steps
 

@@ -4,6 +4,9 @@ import uuid
 
 import httpx
 
+from sentinel_auth._utils import warn_if_insecure
+from sentinel_auth.types import SentinelError
+
 
 class RoleClient:
     """Client for the identity service's RBAC role/action API."""
@@ -13,6 +16,7 @@ class RoleClient:
         self.service_name = service_name
         self.service_key = service_key
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=5.0)
+        warn_if_insecure(self.base_url, "RoleClient")
 
     def _headers(self, token: str | None = None) -> dict[str, str]:
         """Build request headers with service key and optional user JWT."""
@@ -22,6 +26,17 @@ class RoleClient:
         if token:
             h["Authorization"] = f"Bearer {token}"
         return h
+
+    @staticmethod
+    def _check(response: httpx.Response) -> None:
+        """Raise SentinelError on non-2xx responses."""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise SentinelError(
+                f"Sentinel API error: {exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
 
     async def register_actions(self, actions: list[dict]) -> dict:
         """Register actions for this service (service-key only, no user JWT needed).
@@ -36,7 +51,7 @@ class RoleClient:
                 "actions": actions,
             },
         )
-        response.raise_for_status()
+        self._check(response)
         return response.json()
 
     async def check_action(
@@ -55,7 +70,7 @@ class RoleClient:
                 "workspace_id": str(workspace_id),
             },
         )
-        response.raise_for_status()
+        self._check(response)
         return response.json()["allowed"]
 
     async def get_user_actions(
@@ -72,7 +87,7 @@ class RoleClient:
                 "workspace_id": str(workspace_id),
             },
         )
-        response.raise_for_status()
+        self._check(response)
         return response.json()["actions"]
 
     async def close(self):

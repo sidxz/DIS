@@ -248,5 +248,5 @@ class SystemSettingsResponse(BaseModel):
 
 
 class BulkUserStatusRequest(BaseModel):
-    user_ids: list[uuid.UUID]
+    user_ids: list[uuid.UUID] = Field(max_length=500)
     is_active: bool

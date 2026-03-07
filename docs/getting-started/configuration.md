@@ -1,9 +1,11 @@
 # Configuration
 
-All configuration is done through environment variables, loaded from a `.env` file at the project root. The service uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for validation and type coercion.
+All configuration is done through environment variables, loaded from `service/.env` (dev) or `.env.prod` (production). The service uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for validation and type coercion.
 
 ```bash
-cp .env.example .env
+# make setup generates both automatically; manual alternative:
+cp .env.dev.example service/.env     # local development
+cp .env.prod.example .env.prod       # production deployment
 ```
 
 ---
@@ -12,8 +14,9 @@ cp .env.example .env
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `DATABASE_URL` | `str` | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity` | Async PostgreSQL connection string. Must use the `asyncpg` driver. |
-| `REDIS_URL` | `str` | `redis://localhost:9002/0` | Redis connection string. Used for token denylist and session storage. |
+| `DATABASE_URL` | `str` | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require` | Async PostgreSQL connection string. Must use the `asyncpg` driver. |
+| `REDIS_URL` | `str` | `rediss://:sentinel_dev@localhost:9002/0` | Redis connection string. `rediss://` enables TLS. |
+| `REDIS_TLS_CA_CERT` | `str` | `""` | Path to CA cert for Redis TLS verification (e.g. `keys/tls/ca.crt`). |
 
 !!! note "Docker Compose defaults"
     The default values match the `docker-compose.yml` configuration. If you change ports or credentials in your compose file, update these accordingly.
@@ -93,6 +96,8 @@ Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
 | `CORS_ORIGINS` | `str` | `http://localhost:3000,http://localhost:9101` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. |
 | `COOKIE_SECURE` | `bool` | `false` | Set to `true` in production to mark cookies as `Secure` (requires HTTPS). |
 | `ALLOWED_HOSTS` | `str` | *(empty)* | Derived from `BASE_URL` and `ADMIN_URL` hostnames. Falls back to `*` (allow all) only if no hostnames found. Override with comma-separated hostnames. |
+| `DEBUG` | `bool` | `false` | Set `true` for local development. Enables `/docs` and `/redoc`, relaxes startup validation to warnings instead of hard failures. |
+| `BEHIND_PROXY` | `bool` | `false` | Set `true` when behind a reverse proxy (nginx, Caddy, ALB). Enables proxy-aware rate limiting using `X-Forwarded-For`. |
 
 !!! danger "Production security checklist"
     Before deploying to production, you **must**:

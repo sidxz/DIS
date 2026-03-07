@@ -10,6 +10,8 @@ export interface SentinelMiddlewareConfig {
   loginPath?: string
   /** Expected audience. Defaults to "sentinel:access". */
   audience?: string
+  /** Expected JWT issuer claim. Defaults to the origin of jwksUrl. */
+  issuer?: string
   /** Optional workspace ID allowlist. */
   allowedWorkspaces?: string[]
 }
@@ -35,13 +37,43 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
     audience = 'sentinel:access',
     allowedWorkspaces,
   } = config
+  const issuer = config.issuer ?? new URL(jwksUrl).origin
+
+  // Warn if JWKS URL is plain HTTP on a non-localhost host
+  try {
+    const parsed = new URL(jwksUrl)
+    const safe = new Set(['localhost', '127.0.0.1', '::1'])
+    if (parsed.protocol === 'http:' && !safe.has(parsed.hostname)) {
+      console.warn(
+        `[sentinel-auth] (NextMiddleware) Fetching JWKS over plain HTTP from ${parsed.hostname}. ` +
+          'Use HTTPS in production to protect token verification.',
+      )
+    }
+  } catch { /* invalid URL — let verifyToken handle it */ }
+
+  const SENTINEL_HEADERS = [
+    'x-sentinel-user-id',
+    'x-sentinel-email',
+    'x-sentinel-name',
+    'x-sentinel-workspace-id',
+    'x-sentinel-workspace-slug',
+    'x-sentinel-workspace-role',
+  ] as const
 
   return async function middleware(req: NextRequest): Promise<NextResponse> {
     const { pathname } = req.nextUrl
 
+    // Strip any client-sent x-sentinel-* headers to prevent spoofing.
+    // This runs on ALL paths (public and protected) so that downstream
+    // server components / route handlers can never see forged identity.
+    const requestHeaders = new Headers(req.headers)
+    for (const h of SENTINEL_HEADERS) {
+      requestHeaders.delete(h)
+    }
+
     // Skip public paths
     if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))) {
-      return NextResponse.next()
+      return NextResponse.next({ request: { headers: requestHeaders } })
     }
 
     // Extract token from Authorization header or cookie
@@ -55,7 +87,7 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
     }
 
     try {
-      const payload = await verifyToken(token, { jwksUrl, audience })
+      const payload = await verifyToken(token, { jwksUrl, audience, issuer })
       const user = payloadToUser(payload)
 
       // Check workspace allowlist
@@ -63,15 +95,14 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
         return handleUnauthenticated(req, loginPath)
       }
 
-      // Forward user info in headers for server components/route handlers
-      const response = NextResponse.next()
-      response.headers.set('x-sentinel-user-id', user.userId)
-      response.headers.set('x-sentinel-email', user.email)
-      response.headers.set('x-sentinel-name', user.name)
-      response.headers.set('x-sentinel-workspace-id', user.workspaceId)
-      response.headers.set('x-sentinel-workspace-slug', user.workspaceSlug)
-      response.headers.set('x-sentinel-workspace-role', user.workspaceRole)
-      return response
+      // Forward verified user info in request headers for server components/route handlers
+      requestHeaders.set('x-sentinel-user-id', user.userId)
+      requestHeaders.set('x-sentinel-email', user.email)
+      requestHeaders.set('x-sentinel-name', user.name)
+      requestHeaders.set('x-sentinel-workspace-id', user.workspaceId)
+      requestHeaders.set('x-sentinel-workspace-slug', user.workspaceSlug)
+      requestHeaders.set('x-sentinel-workspace-role', user.workspaceRole)
+      return NextResponse.next({ request: { headers: requestHeaders } })
     } catch {
       return handleUnauthenticated(req, loginPath)
     }
@@ -84,7 +115,10 @@ function handleUnauthenticated(
 ): NextResponse {
   const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
   if (isApiRoute) {
-    return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json(
+      { detail: 'Unauthorized' },
+      { status: 401 },
+    )
   }
   const loginUrl = req.nextUrl.clone()
   loginUrl.pathname = loginPath

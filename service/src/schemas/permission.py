@@ -55,7 +55,7 @@ class ResourcePermissionResponse(BaseModel):
     resource_type: str
     resource_id: uuid.UUID
     workspace_id: uuid.UUID
-    owner_id: uuid.UUID
+    owner_id: uuid.UUID | None
     visibility: str
     created_at: datetime
     shares: list["ResourceShareResponse"]
@@ -68,7 +68,7 @@ class ResourceShareResponse(BaseModel):
     grantee_type: str
     grantee_id: uuid.UUID
     permission: str
-    granted_by: uuid.UUID
+    granted_by: uuid.UUID | None
     granted_at: datetime
 
     model_config = {"from_attributes": True}

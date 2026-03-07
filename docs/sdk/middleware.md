@@ -268,6 +268,16 @@ async def me(user: AuthenticatedUser = Depends(get_current_user)):
 
 The dependency approach is preferred because it provides type safety, automatic 401 responses if the user is missing, and cleaner function signatures.
 
+## HTTPS in Production
+
+The Python SDK logs a warning if the `JWTAuthMiddleware`, `PermissionClient`, or `RoleClient` is configured with a plain `http://` URL pointing to a non-localhost host. This is a reminder, not a hard error — but **all production traffic to Sentinel must use HTTPS** to protect tokens and credentials in transit.
+
+!!! warning "Insecure connection warning"
+    ```
+    WARNING sentinel_auth - Sentinel SDK (JWTAuthMiddleware) is connecting over plain
+    HTTP to identity.example.com. Use HTTPS in production to protect tokens and credentials.
+    ```
+
 ## Next Steps
 
 - [Dependencies](dependencies.md) -- use `get_current_user`, `require_role`, and other helpers

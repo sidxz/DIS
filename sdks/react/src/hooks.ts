@@ -28,6 +28,7 @@ export function useHasRole(minimum: WorkspaceRole): boolean {
   if (!user) return false
   const userLevel = ROLE_HIERARCHY.indexOf(user.workspaceRole)
   const requiredLevel = ROLE_HIERARCHY.indexOf(minimum)
+  if (requiredLevel === -1) return false
   return userLevel >= requiredLevel
 }
 

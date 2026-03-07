@@ -110,7 +110,7 @@ async def delete_service_action(
     if not action:
         return False
     await db.delete(action)
-    await db.flush()
+    await db.commit()
     return True
 
 

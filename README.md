@@ -2,7 +2,7 @@
 
 ![Sentinel Auth](docs/assets/images/splash.png)
 
-A lightweight authentication, workspace management, and entity-level permissions service. Built for teams that need batteries-included SSO-first identity with fine-grained authorization. Ships with an Admin UI, Python SDK, and JS/React SDK.
+A lightweight authorization, workspace management, and entity-level permissions service. Built for teams that need batteries-included SSO-first identity with fine-grained authorization. Ships with an Admin UI, Python SDK, and JS/React SDK.
 
 ## Status
 
@@ -11,7 +11,7 @@ A lightweight authentication, workspace management, and entity-level permissions
 [![PyPI](https://img.shields.io/pypi/v/sentinel-auth-sdk?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/sentinel-auth-sdk/)
 [![npm](https://img.shields.io/npm/v/@sentinel-auth/js?logo=npm&logoColor=white&label=npm)](https://www.npmjs.com/package/@sentinel-auth/js)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io/sidxz/sentinel-2496ed?logo=docker&logoColor=white)](https://github.com/sidxz/Sentinel/pkgs/container/sentinel)
-[![License](https://img.shields.io/github/license/sidxz/Sentinel?logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![AI Assisted](https://img.shields.io/badge/AI%20Co--pilot-Claude%20Code-6f42c1?logo=anthropic&logoColor=white)](https://claude.ai/claude-code)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -29,6 +29,10 @@ A lightweight authentication, workspace management, and entity-level permissions
 - **Client & service app management** — register frontend apps (redirect URI allowlist) and backend services (API keys) via the admin panel.
 - **JWKS endpoint** — `/.well-known/jwks.json` for automatic key discovery by consuming services.
 - **Security hardened** — rate limiting, CORS, HSTS, CSP, trusted hosts, session encryption, and a comprehensive pentest suite.
+
+> **BETA SOFTWARE WARNING**  
+> This software is currently in beta and **not fully production ready**. While functional and actively developed, it may contain bugs, incomplete features, or breaking changes. Use in production environments at your own risk. Contributions and feedback are welcome!
+
 
 ## Documentation
 
@@ -67,45 +71,62 @@ flowchart TD
 
 ## Quick start
 
-### Docker (recommended)
-
-```bash
-# Create project directory and generate JWT keys
-mkdir sentinel && cd sentinel
-mkdir -p keys
-openssl genrsa -out keys/private.pem 2048
-openssl rsa -in keys/private.pem -pubout -out keys/public.pem
-
-# Download config template and compose file
-curl -fsSL https://raw.githubusercontent.com/sidxz/daikon-sentinel/main/.env.prod.example -o .env
-curl -fsSL https://raw.githubusercontent.com/sidxz/daikon-sentinel/main/docker-compose.prod.yml -o docker-compose.prod.yml
-
-# Fill in .env (database passwords, session secret, OAuth credentials, admin email)
-# Then start everything:
-docker compose -f docker-compose.prod.yml up -d
-```
-
-The service is available at `http://localhost:9003` with interactive API docs at `/docs` and the admin panel at `/admin`.
-
-### From source (contributors)
+### From source
 
 ```bash
 git clone <repo-url> identity-service && cd identity-service
-cp .env.example .env
-make setup    # generates keys, installs deps, starts Postgres + Redis
-make start    # starts the service on :9003
-make admin    # starts the admin panel on :9004
-make seed     # (optional) load test data
+make setup    # generates JWT keys, TLS certs, env files (random secrets), installs deps, starts Postgres + Redis
 ```
+
+`make setup` is idempotent — safe to re-run. Once complete, configure an OAuth provider:
+
+```bash
+vim service/.env    # add GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET (or GitHub/EntraID), ADMIN_EMAILS
+```
+
+Then start the service and admin panel:
+
+```bash
+make start    # identity service on :9003 (auto-migrates DB on boot)
+make admin    # admin panel on :9004
+make seed     # (optional) populate test data
+```
+
+### Docker production
+
+```bash
+make setup              # generates keys, TLS certs, .env.prod with random DB/Redis passwords
+vim .env.prod           # set BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### Available commands
+
+Run `make help` to see all commands:
+
+| Command | Description |
+|---------|-------------|
+| `make setup` | One-time setup: keys, TLS certs, env files, deps, dev containers |
+| `make start` | Start identity service on `:9003` (auto-migrates) |
+| `make admin` | Start admin panel dev server on `:9004` |
+| `make seed` | Seed database with test data |
+| `make status` | Check what's running |
+| `make lint` | Run ruff linter and format check |
+| `make fmt` | Auto-fix lint and formatting issues |
+| `make docs-serve` | Serve documentation site with live reload |
+| `make pentest` | Run full pentest suite |
+| `make clean` | Stop containers and wipe database |
+| `make nuke` | Full reset: wipe everything including deps, keys, and env files |
+| `make release VERSION=x.y.z` | Release all packages |
 
 ### Next steps
 
-1. Configure an OAuth provider (Google is easiest) in your `.env`.
-2. Sign in to the **admin panel** to create your first user.
-3. Register a **client app** (redirect URI allowlist for your frontend).
-4. Register a **service app** (API key for your backend).
+1. Sign in to the **admin panel** (`http://localhost:9004`) — your `ADMIN_EMAILS` user is auto-promoted on first login.
+2. Register a **client app** (redirect URI allowlist for your frontend).
+3. Register a **service app** (API key for your backend).
+4. Integrate using the [Python SDK](#python) or [JS/React SDK](#javascript--react).
 
-See the [Getting Started guide](https://sidxz.github.io/Sentinel/getting-started/) for the full walkthrough, or the [Next.js Tutorial](https://sidxz.github.io/Sentinel/guide/tutorial-nextjs/) for a Next.js frontend.
+See the [Getting Started guide](https://sidxz.github.io/Sentinel/getting-started/) for the full walkthrough, or the [Next.js Tutorial](https://sidxz.github.io/Sentinel/guide/tutorial-nextjs/) for a Next.js App Router integration.
 
 ## SDK usage
 
@@ -115,40 +136,53 @@ See the [Getting Started guide](https://sidxz.github.io/Sentinel/getting-started
 pip install sentinel-auth-sdk
 ```
 
+The `Sentinel` class is the single entry point — it wires up JWT middleware, RBAC action registration, permission and role clients, and a lifespan handler in one object:
+
 ```python
 from fastapi import FastAPI, Depends
-from sentinel_auth.middleware import JWTAuthMiddleware
+from sentinel_auth import Sentinel, AuthenticatedUser
 from sentinel_auth.dependencies import get_current_user, require_role
-from sentinel_auth.types import AuthenticatedUser
 
-app = FastAPI()
-app.add_middleware(
-    JWTAuthMiddleware,
-    jwks_url="http://localhost:9003/.well-known/jwks.json",
+sentinel = Sentinel(
+    base_url="http://localhost:9003",
+    service_name="my-service",
+    service_key="sk_...",
+    actions=[
+        {"action": "reports:export", "description": "Export reports as CSV"},
+    ],
 )
 
+app = FastAPI(lifespan=sentinel.lifespan)
+sentinel.protect(app)
+
+# Tier 1: Workspace role from JWT
 @app.get("/things")
 async def list_things(user: AuthenticatedUser = Depends(get_current_user)):
     return await fetch_things(workspace_id=user.workspace_id)
 
+# Tier 1: Minimum role enforcement
 @app.post("/things")
 async def create_thing(user: AuthenticatedUser = Depends(require_role("editor"))):
     ...
+
+# Tier 2: Custom RBAC action
+@app.get("/reports/export")
+async def export(user: AuthenticatedUser = Depends(sentinel.require_action("reports:export"))):
+    ...
+
+# Tier 3: Entity-level permission check
+@app.get("/things/{thing_id}")
+async def get_thing(thing_id: str, user: AuthenticatedUser = Depends(get_current_user)):
+    allowed = await sentinel.permissions.can(
+        token=request.headers["Authorization"].removeprefix("Bearer "),
+        resource_type="thing",
+        resource_id=thing_id,
+        action="view",
+    )
+    ...
 ```
 
-Check entity-level permissions from any backend service:
-
-```python
-from sentinel_auth.permissions import PermissionClient
-
-perm = PermissionClient(
-    base_url="http://localhost:9003",
-    service_name="my-app",
-    service_key="sk_...",
-)
-
-allowed = await perm.can(token=jwt, resource_type="document", resource_id=doc_id, action="edit")
-```
+On startup, `sentinel.lifespan` registers your RBAC actions with the identity service. `sentinel.protect(app)` adds JWT middleware with automatic JWKS discovery. `sentinel.permissions` and `sentinel.roles` are lazily-created HTTP clients for the permission and role APIs.
 
 ### JavaScript / React
 
