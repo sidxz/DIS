@@ -22,6 +22,7 @@ sentinel = Sentinel(
     base_url=settings.sentinel_url,
     service_name=settings.service_name,
     service_key=settings.service_api_key,
+    mode="proxy",
     actions=[
         {"action": "notes:export", "description": "Export notes as JSON"},
         {"action": "notes:bulk-delete", "description": "Bulk delete notes"},

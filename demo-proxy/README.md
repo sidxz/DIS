@@ -1,4 +1,8 @@
-# Team Notes — Sentinel Auth SDK Demo
+# Team Notes — Sentinel Auth SDK Demo (Proxy Mode)
+
+> **Mode:** This demo uses **proxy mode** (`mode="proxy"`) where Sentinel handles
+> the entire OAuth flow — redirect, callback, token exchange, JWT issuance.
+> For the recommended AuthZ mode, see [`demo-authz/`](../demo-authz/).
 
 A simple note-taking app that demonstrates all features of the Sentinel Auth SDK:
 
@@ -52,7 +56,7 @@ In the Sentinel admin panel ([http://localhost:9004](http://localhost:9004) → 
 ### 4. Start the Demo Backend
 
 ```bash
-cd demo/backend
+cd demo-proxy/backend
 cp .env.example .env
 # Edit .env and paste the SERVICE_API_KEY from step 3
 
@@ -67,7 +71,7 @@ The backend fetches the signing key automatically from Sentinel's JWKS endpoint 
 ### 5. Start the Demo Frontend
 
 ```bash
-cd demo/frontend
+cd demo-proxy/frontend
 npm install
 npm run dev
 ```

@@ -14,7 +14,8 @@ keys/
 .env*
 !.env.dev.example
 !.env.prod.example
-!demo/backend/.env.example
+!demo-proxy/backend/.env.example
+!demo-authz/backend/.env.example
 
 # Node
 node_modules/
