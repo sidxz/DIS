@@ -69,7 +69,7 @@ echo "Running JS tests..."
 (cd sdks && npm test --silent)
 
 echo "Running Python SDK tests..."
-(cd sdk && uv run pytest -q)
+(cd sdk && uv sync --extra dev -q && uv run pytest -q)
 
 echo ""
 
