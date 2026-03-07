@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import ServiceKeyContext, require_service_key
+from src.api.dependencies import ServiceKeyContext, require_service_context
 from src.auth.jwt import create_authz_token
 from src.config import settings
 from src.database import get_db
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/authz", tags=["authz"])
 @router.post("/resolve", response_model=AuthzResolveResponse)
 async def resolve(
     body: AuthzResolveRequest,
-    service_ctx: ServiceKeyContext = Depends(require_service_key),
+    service_ctx: ServiceKeyContext = Depends(require_service_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Validate IdP token, provision user, and return authorization context.
