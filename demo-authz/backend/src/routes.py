@@ -24,6 +24,26 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
+# Auth — proxy to Sentinel's /authz/resolve (no authz token needed yet)
+# ---------------------------------------------------------------------------
+class ResolveRequest(BaseModel):
+    idp_token: str
+    provider: str
+    workspace_id: str | None = None
+
+
+@router.post("/auth/resolve")
+async def auth_resolve(body: ResolveRequest):
+    """Proxy to Sentinel's /authz/resolve. Adds service key server-side."""
+    result = await sentinel.authz.resolve(
+        idp_token=body.idp_token,
+        provider=body.provider,
+        workspace_id=uuid.UUID(body.workspace_id) if body.workspace_id else None,
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Request / response schemas
 # ---------------------------------------------------------------------------
 class CreateNoteRequest(BaseModel):

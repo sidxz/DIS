@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 # Dual-token authentication (IdP token + Sentinel authz token)
-sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc"])
+sentinel.protect(app, exclude_paths=["/health", "/docs", "/openapi.json", "/redoc", "/auth/resolve"])
 
 # Mount routes
 from src.routes import router  # noqa: E402
