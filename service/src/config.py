@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "rediss://:sentinel_dev@localhost:9002/0"
     redis_tls_ca_cert: str = ""  # Path to CA cert for Redis TLS (e.g. keys/tls/ca.crt)
+    redis_tls_verify: str = "none"  # "none" | "required" — set "required" in production
 
     # JWT
     jwt_private_key_path: Path = Path("keys/private.pem")
@@ -64,14 +65,16 @@ class Settings(BaseSettings):
         """Extra kwargs for redis.from_url() when using rediss:// scheme."""
         if not self.redis_url.startswith("rediss://"):
             return {}
+        import ssl as _ssl
+
         kwargs: dict = {}
         if self.redis_tls_ca_cert:
             kwargs["ssl_ca_certs"] = self.redis_tls_ca_cert
-        else:
-            # No CA cert provided — disable cert verification (still encrypted)
-            import ssl as _ssl
-
-            kwargs["ssl_cert_reqs"] = _ssl.CERT_NONE
+        kwargs["ssl_cert_reqs"] = (
+            _ssl.CERT_REQUIRED
+            if self.redis_tls_verify == "required"
+            else _ssl.CERT_NONE
+        )
         return kwargs
 
     @property

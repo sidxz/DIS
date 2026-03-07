@@ -5,6 +5,7 @@ JWT tokens on incoming requests and populate ``request.state.user``
 with an ``AuthenticatedUser`` instance.
 """
 
+import asyncio
 import base64
 import uuid
 
@@ -98,6 +99,7 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
             raise ValueError("Either public_key or jwks_url must be provided")
         self.public_key = public_key
         self.jwks_url = jwks_url
+        self._jwks_lock = asyncio.Lock()
         self.algorithm = algorithm
         self.audience = audience
         self.exclude_paths = exclude_paths or ["/health", "/docs", "/openapi.json"]
@@ -109,16 +111,19 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         """Return the cached public key, fetching from JWKS if needed."""
         if self.public_key:
             return self.public_key
-        # Fetch from JWKS endpoint
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(self.jwks_url)
-            resp.raise_for_status()
-        jwks = resp.json()
-        for key in jwks["keys"]:
-            if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
-                self.public_key = _jwk_to_pem(key)
+        async with self._jwks_lock:
+            if self.public_key:
                 return self.public_key
-        raise RuntimeError("No RSA signing key found in JWKS")
+            # Fetch from JWKS endpoint
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(self.jwks_url)
+                resp.raise_for_status()
+                jwks = resp.json()
+            for key in jwks["keys"]:
+                if key.get("kty") == "RSA" and key.get("use", "sig") == "sig":
+                    self.public_key = _jwk_to_pem(key)
+                    return self.public_key
+            raise RuntimeError("No RSA signing key found in JWKS")
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         # Skip auth for excluded paths
@@ -143,20 +148,23 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         except Exception:
             return JSONResponse(status_code=500, content={"detail": "Authentication service unavailable"})
 
-        if self.allowed_workspaces is not None and payload["wid"] not in self.allowed_workspaces:
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Workspace not permitted for this service"},
-            )
+        try:
+            if self.allowed_workspaces is not None and payload["wid"] not in self.allowed_workspaces:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Workspace not permitted for this service"},
+                )
 
-        request.state.user = AuthenticatedUser(
-            user_id=uuid.UUID(payload["sub"]),
-            email=payload["email"],
-            name=payload["name"],
-            workspace_id=uuid.UUID(payload["wid"]),
-            workspace_slug=payload["wslug"],
-            workspace_role=payload["wrole"],
-            groups=[uuid.UUID(g) for g in payload.get("groups", [])],
-        )
+            request.state.user = AuthenticatedUser(
+                user_id=uuid.UUID(payload["sub"]),
+                email=payload["email"],
+                name=payload["name"],
+                workspace_id=uuid.UUID(payload["wid"]),
+                workspace_slug=payload["wslug"],
+                workspace_role=payload["wrole"],
+                groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+            )
+        except (KeyError, ValueError):
+            return JSONResponse(status_code=401, content={"detail": "Invalid token claims"})
 
         return await call_next(request)

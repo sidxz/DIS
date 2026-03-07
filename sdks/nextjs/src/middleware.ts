@@ -10,6 +10,8 @@ export interface SentinelMiddlewareConfig {
   loginPath?: string
   /** Expected audience. Defaults to "sentinel:access". */
   audience?: string
+  /** Expected JWT issuer claim. Defaults to the origin of jwksUrl. */
+  issuer?: string
   /** Optional workspace ID allowlist. */
   allowedWorkspaces?: string[]
 }
@@ -35,6 +37,7 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
     audience = 'sentinel:access',
     allowedWorkspaces,
   } = config
+  const issuer = config.issuer ?? new URL(jwksUrl).origin
 
   // Warn if JWKS URL is plain HTTP on a non-localhost host
   try {
@@ -80,29 +83,28 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
       : req.cookies.get('sentinel_access_token')?.value
 
     if (!token) {
-      return handleUnauthenticated(req, loginPath, requestHeaders)
+      return handleUnauthenticated(req, loginPath)
     }
 
     try {
-      const payload = await verifyToken(token, { jwksUrl, audience })
+      const payload = await verifyToken(token, { jwksUrl, audience, issuer })
       const user = payloadToUser(payload)
 
       // Check workspace allowlist
       if (allowedWorkspaces && !allowedWorkspaces.includes(user.workspaceId)) {
-        return handleUnauthenticated(req, loginPath, requestHeaders)
+        return handleUnauthenticated(req, loginPath)
       }
 
-      // Forward verified user info in headers for server components/route handlers
-      const response = NextResponse.next({ request: { headers: requestHeaders } })
-      response.headers.set('x-sentinel-user-id', user.userId)
-      response.headers.set('x-sentinel-email', user.email)
-      response.headers.set('x-sentinel-name', user.name)
-      response.headers.set('x-sentinel-workspace-id', user.workspaceId)
-      response.headers.set('x-sentinel-workspace-slug', user.workspaceSlug)
-      response.headers.set('x-sentinel-workspace-role', user.workspaceRole)
-      return response
+      // Forward verified user info in request headers for server components/route handlers
+      requestHeaders.set('x-sentinel-user-id', user.userId)
+      requestHeaders.set('x-sentinel-email', user.email)
+      requestHeaders.set('x-sentinel-name', user.name)
+      requestHeaders.set('x-sentinel-workspace-id', user.workspaceId)
+      requestHeaders.set('x-sentinel-workspace-slug', user.workspaceSlug)
+      requestHeaders.set('x-sentinel-workspace-role', user.workspaceRole)
+      return NextResponse.next({ request: { headers: requestHeaders } })
     } catch {
-      return handleUnauthenticated(req, loginPath, requestHeaders)
+      return handleUnauthenticated(req, loginPath)
     }
   }
 }
@@ -110,16 +112,15 @@ export function createSentinelMiddleware(config: SentinelMiddlewareConfig) {
 function handleUnauthenticated(
   req: NextRequest,
   loginPath: string,
-  cleanHeaders?: Headers,
 ): NextResponse {
   const isApiRoute = req.nextUrl.pathname.startsWith('/api/')
   if (isApiRoute) {
     return NextResponse.json(
       { detail: 'Unauthorized' },
-      { status: 401, headers: cleanHeaders },
+      { status: 401 },
     )
   }
   const loginUrl = req.nextUrl.clone()
   loginUrl.pathname = loginPath
-  return NextResponse.redirect(loginUrl, { headers: cleanHeaders })
+  return NextResponse.redirect(loginUrl)
 }

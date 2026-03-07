@@ -15,7 +15,7 @@ def _proxy_aware_key_func(request: Request) -> str:
     if settings.behind_proxy:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            return forwarded.split(",")[-1].strip()
     if request.client:
         return request.client.host
     return "unknown"
@@ -82,15 +82,18 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         ip = _proxy_aware_key_func(request)
         key = f"rl:global:{ip}"
 
-        r = await _get_redis()
-        count = await r.eval(_INCR_WITH_EXPIRE, 1, key, self.window)
+        try:
+            r = await _get_redis()
+            count = await r.eval(_INCR_WITH_EXPIRE, 1, key, self.window)
 
-        if count > self.rpm:
-            ttl = await r.ttl(key)
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests"},
-                headers={"Retry-After": str(max(ttl, 1))},
-            )
+            if count > self.rpm:
+                ttl = await r.ttl(key)
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many requests"},
+                    headers={"Retry-After": str(max(ttl, 1))},
+                )
+        except Exception:
+            pass  # Fail open — don't block traffic when Redis is unavailable
 
         return await call_next(request)

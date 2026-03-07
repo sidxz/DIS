@@ -545,3 +545,6 @@ Before deploying to production, verify the following:
 - [ ] `ADMIN_EMAILS` is set if you want auto-promotion for specific users
 - [ ] A reverse proxy (nginx, Caddy, or cloud LB) handles TLS termination and sets `X-Forwarded-For`
 - [ ] Startup validation passes with `DEBUG=false` (all checks green)
+
+---
+

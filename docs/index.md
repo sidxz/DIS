@@ -110,6 +110,8 @@ Choose your path based on what you need to do:
 </div>
 
 ---
+> **BETA SOFTWARE WARNING**  
+> This software is currently in beta and **not fully production ready**. While functional and actively developed, it may contain bugs, incomplete features, or breaking changes. Use in production environments at your own risk. Contributions and feedback are welcome!
 
 ## Architecture at a Glance
 
@@ -144,14 +146,3 @@ Frontend App          Sentinel Auth                  Your Microservices
 
 ---
 
-## Tech Stack
-
-| Component | Technology | Purpose |
-|-----------|-----------|---------|
-| **Web framework** | FastAPI | Async HTTP API with OpenAPI docs |
-| **ORM** | SQLAlchemy 2.0 (async) | Database models and queries |
-| **Database** | PostgreSQL 16 | Persistent storage for users, workspaces, groups, permissions |
-| **Cache / tokens** | Redis 7 | Refresh token families, access token denylist, rate limiting |
-| **OAuth2 / OIDC** | Authlib | Provider integration (Google, GitHub, EntraID) |
-| **JWT** | PyJWT + RS256 | Stateless access tokens with workspace context |
-| **Package manager** | uv workspaces | Monorepo with `service/` and `sdk/` packages |

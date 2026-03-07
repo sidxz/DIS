@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import httpx
 
 from sentinel_auth._utils import warn_if_insecure
+from sentinel_auth.types import SentinelError
 
 
 @dataclass
@@ -44,6 +45,17 @@ class PermissionClient:
             h["Authorization"] = f"Bearer {token}"
         return h
 
+    @staticmethod
+    def _check(response: httpx.Response) -> None:
+        """Raise SentinelError on non-2xx responses."""
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise SentinelError(
+                f"Sentinel API error: {exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
+
     async def check(
         self,
         token: str,
@@ -65,7 +77,7 @@ class PermissionClient:
                 ]
             },
         )
-        response.raise_for_status()
+        self._check(response)
         data = response.json()
         return [
             PermissionResult(
@@ -113,7 +125,7 @@ class PermissionClient:
                 "visibility": visibility,
             },
         )
-        response.raise_for_status()
+        self._check(response)
         return response.json()
 
     async def share(
@@ -134,7 +146,7 @@ class PermissionClient:
             f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
             headers=self._headers(),
         )
-        lookup.raise_for_status()
+        self._check(lookup)
         permission_id = lookup.json()["id"]
 
         # Share
@@ -147,7 +159,7 @@ class PermissionClient:
                 "permission": permission,
             },
         )
-        response.raise_for_status()
+        self._check(response)
         return response.json()
 
     async def accessible(
@@ -177,7 +189,7 @@ class PermissionClient:
             headers=self._headers(token),
             json=payload,
         )
-        response.raise_for_status()
+        self._check(response)
         data = response.json()
         return (
             [uuid.UUID(rid) for rid in data["resource_ids"]],

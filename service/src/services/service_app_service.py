@@ -58,8 +58,8 @@ async def validate_key(raw_key: str, db: AsyncSession) -> tuple[str, uuid.UUID] 
     cached = await r.hget(_CACHE_KEY, sha)
     if cached:
         svc, app_id_str = cached.split(":", 1)
-        # Update last_used_at in background (best-effort)
-        await _touch_last_used(db, uuid.UUID(app_id_str))
+        if not await _touch_last_used(db, uuid.UUID(app_id_str)):
+            return None
         return svc, uuid.UUID(app_id_str)
 
     # Cache miss — rebuild cache from DB
@@ -69,7 +69,8 @@ async def validate_key(raw_key: str, db: AsyncSession) -> tuple[str, uuid.UUID] 
     cached = await r.hget(_CACHE_KEY, sha)
     if cached:
         svc, app_id_str = cached.split(":", 1)
-        await _touch_last_used(db, uuid.UUID(app_id_str))
+        if not await _touch_last_used(db, uuid.UUID(app_id_str)):
+            return None
         return svc, uuid.UUID(app_id_str)
 
     return None
@@ -154,8 +155,12 @@ async def _invalidate_cache() -> None:
     await r.delete(_CACHE_KEY)
 
 
-async def _touch_last_used(db: AsyncSession, app_id: uuid.UUID) -> None:
-    """Update last_used_at timestamp (best-effort, no commit)."""
+async def _touch_last_used(db: AsyncSession, app_id: uuid.UUID) -> bool:
+    """Update last_used_at timestamp (best-effort). Returns False if app is inactive."""
     app = await db.get(ServiceApp, app_id)
-    if app:
-        app.last_used_at = datetime.now(UTC)
+    if not app or not app.is_active:
+        await _invalidate_cache()
+        return False
+    app.last_used_at = datetime.now(UTC)
+    await db.commit()
+    return True

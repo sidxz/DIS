@@ -95,6 +95,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?ssl=require
       REDIS_URL: rediss://:${REDIS_PASSWORD}@redis:6379/0
       REDIS_TLS_CA_CERT: /run/secrets/tls_ca
+      REDIS_TLS_VERIFY: required
       BASE_URL: ${BASE_URL}
       ADMIN_URL: ${ADMIN_URL}
       CORS_ORIGINS: ${CORS_ORIGINS:-}  # base origins only; client app origins are loaded from DB
@@ -159,4 +160,4 @@ volumes:
 
 networks:
   sentinel:
-    driver: bridge
+    driver: overlay

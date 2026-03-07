@@ -24,7 +24,7 @@ class WorkspaceResponse(BaseModel):
     slug: str
     name: str
     description: str | None
-    created_by: uuid.UUID
+    created_by: uuid.UUID | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

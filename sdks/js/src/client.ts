@@ -25,6 +25,7 @@ export class SentinelAuth {
   private readonly autoRefresh: boolean
   private readonly refreshBuffer: number
   private refreshTimer: ReturnType<typeof setTimeout> | null = null
+  private refreshPromise: Promise<boolean> | null = null
   private listeners: Set<AuthStateListener> = new Set()
 
   constructor(config: SentinelConfig) {
@@ -105,6 +106,14 @@ export class SentinelAuth {
 
   /** Refresh the access token using the stored refresh token. Returns true on success. */
   async refresh(): Promise<boolean> {
+    if (this.refreshPromise) return this.refreshPromise
+    this.refreshPromise = this._doRefresh().finally(() => {
+      this.refreshPromise = null
+    })
+    return this.refreshPromise
+  }
+
+  private async _doRefresh(): Promise<boolean> {
     const refreshToken = this.store.getRefreshToken()
     if (!refreshToken) return false
 
@@ -114,7 +123,14 @@ export class SentinelAuth {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh_token: refreshToken }),
       })
-      if (!res.ok) return false
+      if (!res.ok) {
+        if (res.status === 401) {
+          this.store.clear()
+          this.clearRefreshTimer()
+          this.notify()
+        }
+        return false
+      }
 
       const data: TokenResponse = await res.json()
       this.store.setTokens(data.access_token, data.refresh_token)

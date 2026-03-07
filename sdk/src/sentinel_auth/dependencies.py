@@ -6,9 +6,10 @@ import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import httpx
 from fastapi import Depends, HTTPException, Request
 
-from sentinel_auth.types import AuthenticatedUser, WorkspaceContext
+from sentinel_auth.types import AuthenticatedUser, SentinelError, WorkspaceContext
 
 if TYPE_CHECKING:
     from sentinel_auth.roles import RoleClient
@@ -72,7 +73,14 @@ def require_action(role_client: RoleClient, action: str) -> Callable:
 
     async def dependency(request: Request, user: AuthenticatedUser = Depends(get_current_user)) -> AuthenticatedUser:
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")
-        allowed = await role_client.check_action(token, action, user.workspace_id)
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing bearer token")
+        try:
+            allowed = await role_client.check_action(token, action, user.workspace_id)
+        except (httpx.TransportError, httpx.TimeoutException):
+            raise HTTPException(status_code=503, detail="Authorization service unavailable")
+        except SentinelError as exc:
+            raise HTTPException(status_code=exc.status_code or 502, detail="Authorization check failed")
         if not allowed:
             raise HTTPException(status_code=403, detail=f"Action '{action}' not permitted")
         return user
