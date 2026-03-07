@@ -112,6 +112,7 @@ def create_authz_token(
     payload = {
         "iss": _ISSUER,
         "sub": str(user_id),
+        "jti": str(uuid.uuid4()),  # Security: jti enables revocation via denylist
         "idp_sub": idp_sub,
         "wid": str(workspace_id),
         "wslug": workspace_slug,
@@ -125,15 +126,27 @@ def create_authz_token(
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
 
 
-def decode_token(token: str, audience: str | list[str] | None = None) -> dict:
+def decode_token(token: str, audience: str | list[str]) -> dict:
     """Decode and validate a JWT.
 
-    If audience is provided, the token's aud claim must match.
+    Audience is required — callers must explicitly declare expected audience.
+    Decode algorithm is hardcoded to RS256 to prevent algorithm confusion attacks.
     """
     return jwt.decode(
         token,
         _get_public_key(),
-        algorithms=[settings.jwt_algorithm],
+        algorithms=["RS256"],  # Security: hardcode to prevent algorithm substitution
         audience=audience,
         issuer=_ISSUER,
     )
+
+
+def _assert_algorithm() -> None:
+    """Startup assertion: encoding algorithm must be RS256."""
+    if settings.jwt_algorithm != "RS256":
+        raise RuntimeError(
+            f"jwt_algorithm must be RS256, got {settings.jwt_algorithm!r}"
+        )
+
+
+_assert_algorithm()

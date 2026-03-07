@@ -42,7 +42,7 @@ async def refresh_origins(db: AsyncSession) -> None:
     svc_stmt = select(ServiceApp.allowed_origins).where(ServiceApp.is_active.is_(True))
     svc_result = await db.execute(svc_stmt)
     for (svc_origins,) in svc_result.all():
-        for origin in (svc_origins or []):
+        for origin in svc_origins or []:
             origins.add(origin)
 
     _allowed_origins = origins
@@ -57,7 +57,7 @@ class DynamicCORSMiddleware(CORSMiddleware):
             app,
             allow_origins=[],
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-            allow_headers=["Content-Type", "Authorization", "X-Service-Key"],
+            allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
             allow_credentials=True,
             max_age=600,
         )

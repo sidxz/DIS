@@ -138,7 +138,9 @@ async def has_active_apps(db: AsyncSession) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def validate_origin(origin: str, db: AsyncSession) -> tuple[str, uuid.UUID] | None:
+async def validate_origin(
+    origin: str, db: AsyncSession
+) -> tuple[str, uuid.UUID] | None:
     """Validate a request origin against service app allowed_origins.
     Returns (service_name, app_id) or None.
     """
@@ -186,7 +188,7 @@ async def _rebuild_origin_cache(db: AsyncSession) -> None:
     pipe = r.pipeline()
     pipe.delete(_ORIGIN_CACHE_KEY)
     for app in apps:
-        for origin in (app.allowed_origins or []):
+        for origin in app.allowed_origins or []:
             pipe.hset(_ORIGIN_CACHE_KEY, origin, f"{app.service_name}:{app.id}")
     pipe.expire(_ORIGIN_CACHE_KEY, _CACHE_TTL)
     await pipe.execute()

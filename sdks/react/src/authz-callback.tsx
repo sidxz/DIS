@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { parseJwt } from '@sentinel-auth/js'
 import type { AuthzWorkspaceOption, SentinelUser } from '@sentinel-auth/js'
 import { useAuthz } from './authz-hooks'
 
@@ -88,7 +89,22 @@ export function AuthzCallback({
       return
     }
 
-    // Clean up session storage
+    // Verify nonce to prevent token replay attacks
+    const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
+    try {
+      const claims = parseJwt(idToken)
+      if (!expectedNonce || (claims as unknown as Record<string, unknown>).nonce !== expectedNonce) {
+        throw new Error('Nonce mismatch — possible token replay')
+      }
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error('Nonce verification failed')
+      setError(err)
+      setLoading(false)
+      onError?.(err)
+      return
+    }
+
+    // Clean up session storage only after successful nonce verification
     sessionStorage.removeItem('sentinel_authz_nonce')
     sessionStorage.removeItem('sentinel_authz_provider')
 

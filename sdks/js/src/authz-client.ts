@@ -1,5 +1,5 @@
-import { AuthzLocalStorageStore } from './authz-storage'
-import { isTokenExpired, tokenToUser } from './jwt-utils'
+import { AuthzMemoryStore } from './authz-storage'
+import { isTokenExpired, parseJwt, tokenToUser } from './jwt-utils'
 import { warnIfInsecure } from './warn-insecure'
 import type {
   SentinelAuthzConfig,
@@ -28,7 +28,7 @@ export class SentinelAuthz {
 
   constructor(config: SentinelAuthzConfig) {
     this.sentinelUrl = config.sentinelUrl.replace(/\/+$/, '')
-    this.store = config.storage ?? new AuthzLocalStorageStore()
+    this.store = config.storage ?? new AuthzMemoryStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 30
     this.idps = config.idps ?? {}
@@ -87,6 +87,13 @@ export class SentinelAuthz {
       throw new Error(params.get('error_description') || error)
     }
     if (!idpToken) return null
+
+    // Verify nonce to prevent token replay attacks
+    const expectedNonce = sessionStorage.getItem('sentinel_authz_nonce')
+    const claims = parseJwt(idpToken) as unknown as Record<string, unknown>
+    if (!expectedNonce || claims.nonce !== expectedNonce) {
+      throw new Error('Nonce mismatch — possible token replay')
+    }
 
     // Clean the URL
     window.history.replaceState({}, '', window.location.pathname)

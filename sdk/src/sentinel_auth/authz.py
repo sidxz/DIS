@@ -21,6 +21,9 @@ class AuthzClient:
         self._client: httpx.AsyncClient | None = None
         warn_if_insecure(self.base_url, "AuthzClient")
 
+    def __repr__(self) -> str:
+        return f"AuthzClient(base_url={self.base_url!r})"
+
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=10.0)
@@ -56,7 +59,7 @@ class AuthzClient:
             headers=self._headers(),
         )
         if resp.status_code != 200:
-            raise SentinelError(resp.text, resp.status_code)
+            raise SentinelError(f"Sentinel API error: {resp.status_code}", resp.status_code)
         return resp.json()
 
     async def close(self) -> None:

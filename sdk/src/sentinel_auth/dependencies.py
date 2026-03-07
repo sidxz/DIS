@@ -65,7 +65,7 @@ def require_role(minimum_role: str) -> Callable:
         if not user.has_role(minimum_role):
             raise HTTPException(
                 status_code=403,
-                detail=f"Requires at least '{minimum_role}' role, you have '{user.workspace_role}'",
+                detail=f"Insufficient permissions: requires '{minimum_role}' role",
             )
         return user
 

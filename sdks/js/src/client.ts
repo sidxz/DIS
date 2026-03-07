@@ -1,5 +1,5 @@
 import { generateCodeVerifier, deriveCodeChallenge } from './pkce'
-import { LocalStorageStore } from './storage'
+import { MemoryStore } from './storage'
 import { isTokenExpired, tokenToUser } from './jwt-utils'
 import { warnIfInsecure } from './warn-insecure'
 import type {
@@ -11,6 +11,7 @@ import type {
 } from './types'
 
 const PKCE_KEY = 'sentinel_pkce_verifier'
+const STATE_KEY = 'sentinel_oauth_state'
 
 type AuthStateListener = (user: SentinelUser | null) => void
 
@@ -35,7 +36,7 @@ export class SentinelAuth {
       (typeof window !== 'undefined'
         ? `${window.location.origin}/auth/callback`
         : '')
-    this.store = config.storage ?? new LocalStorageStore()
+    this.store = config.storage ?? new MemoryStore()
     this.autoRefresh = config.autoRefresh ?? true
     this.refreshBuffer = config.refreshBuffer ?? 60
     warnIfInsecure(this.url, 'SentinelAuth')
@@ -61,12 +62,35 @@ export class SentinelAuth {
     const challenge = await deriveCodeChallenge(verifier)
     sessionStorage.setItem(PKCE_KEY, verifier)
 
+    // Generate and store a random state parameter to prevent CSRF
+    const stateBytes = new Uint8Array(16)
+    crypto.getRandomValues(stateBytes)
+    const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    sessionStorage.setItem(STATE_KEY, state)
+
     const params = new URLSearchParams({
       redirect_uri: this.redirectUri,
       code_challenge: challenge,
       code_challenge_method: 'S256',
+      state,
     })
     window.location.href = `${this.url}/auth/login/${provider}?${params}`
+  }
+
+  /**
+   * Verify the OAuth state parameter from the callback URL.
+   * Call this before processing the auth code. Throws if state is missing or mismatched.
+   */
+  verifyCallbackState(): void {
+    const params = new URLSearchParams(window.location.search)
+    const returnedState = params.get('state')
+    const expectedState = sessionStorage.getItem(STATE_KEY)
+
+    if (!expectedState || returnedState !== expectedState) {
+      sessionStorage.removeItem(STATE_KEY)
+      throw new Error('OAuth state mismatch — possible CSRF attack')
+    }
+    sessionStorage.removeItem(STATE_KEY)
   }
 
   /** Fetch available workspaces for the given auth code. */

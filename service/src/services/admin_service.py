@@ -189,12 +189,17 @@ async def update_user(
     if not user:
         return None
     revoke = False
+    deactivated = False
+    activated = False
     if name is not None:
         user.name = name
     if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
         if not is_active:
             revoke = True
+            deactivated = True
+        else:
+            activated = True
     if is_admin is not None and is_admin != user.is_admin:
         user.is_admin = is_admin
         if not is_admin:
@@ -202,6 +207,10 @@ async def update_user(
     await db.commit()
     if revoke:
         await token_service.revoke_all_user_tokens(str(user_id))
+    if deactivated:
+        await token_service.mark_user_deactivated(str(user_id))
+    elif activated:
+        await token_service.mark_user_activated(str(user_id))
     return user
 
 
@@ -456,10 +465,15 @@ async def bulk_update_status(
         update(User).where(User.id.in_(user_ids)).values(is_active=is_active)
     )
     await db.commit()
-    # Revoke tokens for deactivated users so access is cut immediately
     if not is_active:
+        # Revoke tokens and mark deactivated so access is cut immediately
         for uid in user_ids:
             await token_service.revoke_all_user_tokens(str(uid))
+            await token_service.mark_user_deactivated(str(uid))
+    else:
+        # Clear deactivation flags for reactivated users
+        for uid in user_ids:
+            await token_service.mark_user_activated(str(uid))
     return result.rowcount  # type: ignore[return-value]
 
 

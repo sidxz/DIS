@@ -69,6 +69,7 @@ class Sentinel:
             raise ValueError("idp_public_key or idp_jwks_url is required when mode='authz'")
 
         self.base_url = base_url.rstrip("/")
+        warn_if_insecure(self.base_url, "Sentinel")
         self.service_name = service_name
         self.service_key = service_key
         self.mode = mode
@@ -82,12 +83,13 @@ class Sentinel:
         self._authz: AuthzClient | None = None
         self._sentinel_public_key: str | None = None
 
+    def __repr__(self) -> str:
+        return f"Sentinel(base_url={self.base_url!r}, service_name={self.service_name!r})"
+
     @property
     def sentinel_public_key(self) -> str | None:
         """Sentinel's public key, fetched during lifespan startup."""
         return self._sentinel_public_key
-
-        warn_if_insecure(self.base_url, "Sentinel")
 
     # -- Lazy clients --------------------------------------------------------
 

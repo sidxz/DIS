@@ -38,7 +38,7 @@ export interface SentinelAuthzConfig {
   idps?: Record<string, IdpConfig>
   /** OAuth redirect URI. Defaults to `${window.location.origin}/auth/callback`. */
   redirectUri?: string
-  /** Token storage backend. Defaults to AuthzLocalStorageStore. */
+  /** Token storage backend. Defaults to in-memory (AuthzMemoryStore). Pass `new AuthzLocalStorageStore()` to persist across page reloads. */
   storage?: AuthzTokenStore
   /** Automatically refresh authz token before expiry. Defaults to true. */
   autoRefresh?: boolean

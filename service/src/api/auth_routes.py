@@ -526,5 +526,11 @@ async def admin_logout(request: Request, admin: dict = Depends(require_admin)):
     if jti := admin.get("jti"):
         await token_service.blacklist_access_token(jti, admin["exp"])
     response = JSONResponse({"ok": True})
-    response.delete_cookie("admin_token", path="/")
+    response.delete_cookie(
+        "admin_token",
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+    )
     return response

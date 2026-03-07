@@ -11,6 +11,8 @@ export interface SentinelAuthzMiddlewareConfig {
   publicPaths?: string[]
   /** Redirect target for unauthenticated page requests. Defaults to "/login". */
   loginPath?: string
+  /** Expected JWT issuer for the authz token. Defaults to the origin of sentinelUrl. */
+  issuer?: string
 }
 
 // Cache JWKS sets across invocations (Edge runtime module-scoped)
@@ -53,6 +55,7 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
   } = config
 
   const sentinelJwksUrl = `${sentinelUrl.replace(/\/+$/, '')}/.well-known/jwks.json`
+  const issuer = config.issuer ?? new URL(sentinelUrl).origin
 
   const SENTINEL_HEADERS = [
     'x-sentinel-user-id',
@@ -100,7 +103,7 @@ export function createSentinelAuthzMiddleware(config: SentinelAuthzMiddlewareCon
       // Authz token: verify signature + audience via Sentinel's verifyToken.
       const [idpResult, authzPayload] = await Promise.all([
         jwtVerify(idpToken, getJWKS(idpJwksUrl)),
-        verifyToken(authzToken, { jwksUrl: sentinelJwksUrl, audience: 'sentinel:authz' }),
+        verifyToken(authzToken, { jwksUrl: sentinelJwksUrl, audience: 'sentinel:authz', issuer }),
       ])
 
       const idpPayload = idpResult.payload

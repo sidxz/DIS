@@ -1056,9 +1056,23 @@ async def assign_role_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        # Fetch role to obtain its workspace_id for cross-workspace isolation check
+        from src.models.role import Role
+
+        role = await db.get(Role, role_id)
+        if not role:
+            raise HTTPException(status_code=404, detail="Role not found")
         await role_service.assign_user_role(
-            db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"])
+            db,
+            user_id,
+            role_id,
+            assigned_by=uuid.UUID(admin["sub"]),
+            workspace_id=role.workspace_id,
         )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error("assign_user_role failed", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to assign role")

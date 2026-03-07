@@ -205,6 +205,9 @@ async def add_role_actions(
     if not role:
         raise ValueError("Role not found")
     for said in service_action_ids:
+        action = await db.get(ServiceAction, said)
+        if not action:
+            raise ValueError(f"Service action {said} not found")
         ra = RoleAction(role_id=role_id, service_action_id=said)
         db.add(ra)
     await db.commit()
@@ -246,7 +249,13 @@ async def assign_user_role(
     user_id: uuid.UUID,
     role_id: uuid.UUID,
     assigned_by: uuid.UUID | None = None,
+    workspace_id: uuid.UUID | None = None,
 ) -> UserRole:
+    role = await db.get(Role, role_id)
+    if not role:
+        raise ValueError("Role not found")
+    if workspace_id is not None and role.workspace_id != workspace_id:
+        raise ValueError("Role not found in this workspace")
     ur = UserRole(user_id=user_id, role_id=role_id, assigned_by=assigned_by)
     db.add(ur)
     await db.commit()

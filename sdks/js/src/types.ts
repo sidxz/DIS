@@ -5,7 +5,7 @@ export interface SentinelConfig {
   sentinelUrl: string
   /** OAuth redirect URI. Defaults to `${window.location.origin}/auth/callback` */
   redirectUri?: string
-  /** Token storage backend. Defaults to localStorage. */
+  /** Token storage backend. Defaults to in-memory (MemoryStore). Pass `new LocalStorageStore()` to persist across page reloads. */
   storage?: TokenStore
   /** Automatically refresh tokens before expiry. Defaults to true. */
   autoRefresh?: boolean

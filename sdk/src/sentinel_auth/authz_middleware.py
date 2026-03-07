@@ -54,6 +54,10 @@ class AuthzMiddleware(BaseHTTPMiddleware):
         exclude_paths: list[str] | None = None,
     ):
         super().__init__(app)
+        if not sentinel_public_key and not sentinel_instance:
+            raise ValueError(
+                "AuthzMiddleware requires either sentinel_public_key or sentinel_instance for authz token verification"
+            )
         self._idp_public_key = idp_public_key
         self._idp_jwks_url = idp_jwks_url
         self._sentinel_public_key = sentinel_public_key
@@ -77,11 +81,15 @@ class AuthzMiddleware(BaseHTTPMiddleware):
 
     @property
     def sentinel_public_key(self) -> str:
-        if self._sentinel_public_key:
-            return self._sentinel_public_key
-        if self._sentinel_instance:
-            return self._sentinel_instance.sentinel_public_key or ""
-        return ""
+        key = self._sentinel_public_key
+        if not key and self._sentinel_instance:
+            key = self._sentinel_instance.sentinel_public_key or ""
+        if not key:
+            raise RuntimeError(
+                "Sentinel public key not available. Ensure sentinel_instance.lifespan() has run "
+                "or provide sentinel_public_key directly."
+            )
+        return key
 
     def _decode_idp_token(self, token: str) -> dict:
         """Decode and validate an IdP token using JWKS or static key."""

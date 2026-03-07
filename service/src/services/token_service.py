@@ -32,15 +32,17 @@ async def store_refresh_token(
     family_id: str,
     workspace_id: uuid.UUID,
     client_app_id: uuid.UUID | None = None,
+    access_jti: str | None = None,
 ) -> None:
     """Store a refresh token with its family for rotation tracking."""
     r = await get_redis()
     ttl = settings.refresh_token_expire_days * 86400
     pipe = r.pipeline()
-    # Format: user_id:family_id:workspace_id[:client_app_id]
-    val = f"{user_id}:{family_id}:{workspace_id}"
-    if client_app_id:
-        val += f":{client_app_id}"
+    # Format: user_id:family_id:workspace_id:client_app_id:access_jti
+    # Empty segments use empty string as placeholder
+    cap = str(client_app_id) if client_app_id else ""
+    ajti = access_jti or ""
+    val = f"{user_id}:{family_id}:{workspace_id}:{cap}:{ajti}"
     pipe.set(f"{_REFRESH_PREFIX}{jti}", val, ex=ttl)
     pipe.sadd(f"{_FAMILY_PREFIX}{family_id}", jti)
     pipe.expire(f"{_FAMILY_PREFIX}{family_id}", ttl)
@@ -64,29 +66,50 @@ async def consume_refresh_token(
     val = await r.getdel(f"{_REFRESH_PREFIX}{jti}")
     if not val:
         return None
-    # Format: user_id:family_id:workspace_id[:client_app_id]
+    # Format: user_id:family_id:workspace_id:client_app_id:access_jti
+    # (legacy format without access_jti is also supported)
     parts = val.split(":")
     user_id = uuid.UUID(parts[0])
     family_id = parts[1]
     workspace_id = uuid.UUID(parts[2])
-    client_app_id = uuid.UUID(parts[3]) if len(parts) > 3 else None
+    client_app_id = uuid.UUID(parts[3]) if len(parts) > 3 and parts[3] else None
     return user_id, family_id, workspace_id, client_app_id
 
 
 async def revoke_token_family(family_id: str) -> int:
     """Revoke all refresh tokens in a family (theft detection).
 
-    Returns the number of tokens revoked.
+    Also blacklists any associated access tokens so they cannot be used
+    for the remainder of their lifetime.
+
+    Returns the number of refresh tokens revoked.
     """
     r = await get_redis()
     jtis = await r.smembers(f"{_FAMILY_PREFIX}{family_id}")
     if not jtis:
         return 0
+
+    # Read stored values first to extract access JTIs before deleting
+    access_jtis: list[str] = []
+    for jti in jtis:
+        val = await r.get(f"{_REFRESH_PREFIX}{jti}")
+        if val:
+            parts = val.split(":")
+            # Format: user_id:family_id:workspace_id:client_app_id:access_jti
+            if len(parts) >= 5 and parts[4]:
+                access_jtis.append(parts[4])
+
     pipe = r.pipeline()
     for jti in jtis:
         pipe.delete(f"{_REFRESH_PREFIX}{jti}")
     pipe.delete(f"{_FAMILY_PREFIX}{family_id}")
     results = await pipe.execute()
+
+    # Blacklist associated access tokens (default 900s / 15 min TTL)
+    access_ttl = settings.access_token_expire_minutes * 60
+    for access_jti in access_jtis:
+        await r.set(f"{_BLACKLIST_PREFIX}{access_jti}", "1", ex=access_ttl)
+
     return sum(1 for x in results[:-1] if x)
 
 
@@ -128,3 +151,26 @@ async def is_access_token_blacklisted(jti: str) -> bool:
     """Check if an access token has been revoked."""
     r = await get_redis()
     return await r.exists(f"{_BLACKLIST_PREFIX}{jti}") > 0
+
+
+# ── User deactivation tracking ──────────────────────────────────────
+
+_DEACTIVATED_PREFIX = "deactivated:"
+
+
+async def mark_user_deactivated(user_id: str) -> None:
+    """Record that a user has been deactivated for fast Redis-based checks."""
+    r = await get_redis()
+    await r.set(f"{_DEACTIVATED_PREFIX}{user_id}", "1")
+
+
+async def mark_user_activated(user_id: str) -> None:
+    """Remove the deactivation flag when a user is re-activated."""
+    r = await get_redis()
+    await r.delete(f"{_DEACTIVATED_PREFIX}{user_id}")
+
+
+async def is_user_deactivated(user_id: str) -> bool:
+    """Check if a user is flagged as deactivated in Redis."""
+    r = await get_redis()
+    return bool(await r.exists(f"{_DEACTIVATED_PREFIX}{user_id}"))
