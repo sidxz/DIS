@@ -1,0 +1,227 @@
+# Tutorial: Next.js
+
+Build the same Team Notes app from the [React tutorial](react.md), but with a Next.js App Router frontend. Same backend, different frontend stack.
+
+**What you'll build:** A Next.js frontend with Edge Middleware for route protection, server components for data fetching, and client components for interactive UI -- all using `@sentinel-auth/nextjs`.
+
+## Prerequisites
+
+- Same as the [React tutorial](react.md#prerequisites)
+- Completed backend from [React tutorial Steps 1-3](react.md#step-1-backend-setup) (or use `demo-authz/backend/`)
+- Client app registered with redirect URI `http://localhost:3000/auth/callback`
+- Node.js 18+
+
+## Step 1: Backend
+
+Use the same FastAPI backend from the React tutorial. The backend is framework-agnostic -- it validates dual tokens regardless of what frontend sends them.
+
+If you haven't built it yet, follow [React tutorial Steps 1-3](react.md#step-1-backend-setup).
+
+## Step 2: Next.js Setup
+
+```bash
+npx create-next-app@latest frontend --app --typescript --tailwind
+cd frontend
+npm install @sentinel-auth/js @sentinel-auth/nextjs
+```
+
+### Auth Client
+
+Create a shared `SentinelAuthz` instance. This is the same client from the React tutorial -- `@sentinel-auth/nextjs` re-exports the React hooks and wraps them with Next.js-specific helpers.
+
+```typescript
+// lib/auth.ts
+import { SentinelAuthz, IdpConfigs } from "@sentinel-auth/js";
+
+export const authzClient = new SentinelAuthz({
+  sentinelUrl: process.env.NEXT_PUBLIC_SENTINEL_URL || "http://localhost:9003",
+  idps: {
+    google: IdpConfigs.google(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || ""),
+  },
+});
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:9200";
+
+export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
+  return authzClient.fetchJson<T>(`${BACKEND_URL}${path}`, options);
+}
+```
+
+## Step 3: Edge Middleware
+
+Protect routes at the edge. Unauthenticated users are redirected to `/login`.
+
+```typescript
+// middleware.ts
+import { withSentinelAuthz } from "@sentinel-auth/nextjs/middleware";
+
+export default withSentinelAuthz({
+  publicPaths: ["/login", "/auth/callback"],
+  loginPath: "/login",
+});
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+};
+```
+
+## Step 4: Layout + Provider
+
+Wrap the app in `AuthzProvider` so hooks work in client components.
+
+```tsx
+// app/layout.tsx
+import { AuthzProvider } from "@sentinel-auth/nextjs";
+import { authzClient } from "@/lib/auth";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <AuthzProvider client={authzClient}>
+          {children}
+        </AuthzProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+## Step 5: Pages
+
+### Login
+
+```tsx
+// app/login/page.tsx
+"use client";
+import { useAuthz } from "@sentinel-auth/nextjs";
+
+export default function LoginPage() {
+  const { login } = useAuthz();
+  return <button onClick={() => login("google")}>Sign in with Google</button>;
+}
+```
+
+### OAuth Callback
+
+```tsx
+// app/auth/callback/page.tsx
+"use client";
+import { AuthzCallback } from "@sentinel-auth/nextjs";
+import { useRouter } from "next/navigation";
+
+export default function CallbackPage() {
+  const router = useRouter();
+  return (
+    <AuthzCallback
+      onSuccess={() => router.replace("/notes")}
+      workspaceSelector={({ workspaces, onSelect, isLoading }) => (
+        <div>
+          <h2>Select Workspace</h2>
+          {workspaces.map((ws) => (
+            <button key={ws.id} onClick={() => onSelect(ws.id)} disabled={isLoading}>
+              {ws.name} ({ws.role})
+            </button>
+          ))}
+        </div>
+      )}
+    />
+  );
+}
+```
+
+### Note List
+
+A client component that uses `useAuthzUser()` for role checks and `apiFetch` for data.
+
+```tsx
+// app/notes/page.tsx
+"use client";
+import { useAuthzUser } from "@sentinel-auth/nextjs";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/auth";
+import Link from "next/link";
+
+export default function NotesPage() {
+  const user = useAuthzUser();
+  const [notes, setNotes] = useState<any[]>([]);
+  const canCreate = ["editor", "admin", "owner"].includes(user.workspaceRole);
+
+  useEffect(() => {
+    apiFetch<any[]>("/notes").then(setNotes);
+  }, []);
+
+  return (
+    <div>
+      <h1>Notes</h1>
+      {canCreate && <button>New Note</button>}
+      <ul>
+        {notes.map((note) => (
+          <li key={note.id}>
+            <Link href={`/notes/${note.id}`}>{note.title}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### Note Detail
+
+Entity-level ACL checks happen on the backend. If `permissions.can()` denies access, the API returns 403 and the frontend shows the error.
+
+```tsx
+// app/notes/[id]/page.tsx
+"use client";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/auth";
+import Link from "next/link";
+
+export default function NoteDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const [note, setNote] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<any>(`/notes/${id}`)
+      .then(setNote)
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  if (error) return <p>Access denied: {error}</p>;
+  if (!note) return <p>Loading...</p>;
+
+  return (
+    <div>
+      <Link href="/notes">Back</Link>
+      <h1>{note.title}</h1>
+      <p>{note.content}</p>
+      <p>by {note.owner_name}</p>
+    </div>
+  );
+}
+```
+
+## Step 6: Run It
+
+```bash
+# Terminal 1: backend (same as React tutorial)
+cd backend && uvicorn main:app --port 9200 --reload
+
+# Terminal 2: Next.js frontend
+cd frontend && npm run dev
+```
+
+## Result
+
+| Component | React version | Next.js version |
+|-----------|--------------|-----------------|
+| Provider | `AuthzProvider` from `@sentinel-auth/react` | `AuthzProvider` from `@sentinel-auth/nextjs` |
+| Route guard | `AuthzGuard` in JSX | `withSentinelAuthz` Edge Middleware |
+| Hooks | `useAuthz`, `useAuthzUser` from `@sentinel-auth/react` | Same hooks from `@sentinel-auth/nextjs` |
+| Callback | `AuthzCallback` from `@sentinel-auth/react` | `AuthzCallback` from `@sentinel-auth/nextjs` |
+| Data fetching | React Query + `apiFetch` | `apiFetch` (or React Query) |
+
+The backend is identical. The authorization model (three tiers) is backend-enforced and frontend-agnostic.

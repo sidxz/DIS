@@ -1,140 +1,156 @@
 # AuthZ Client
 
-The `SentinelAuthz` class is the browser auth client for authz mode. It manages the dual-token flow: IdP token (identity, from Google/GitHub/etc.) + Sentinel authz token (authorization, signed by Sentinel).
+`SentinelAuthz` is the browser auth client for authz mode. It manages dual tokens: an IdP token (identity, from Google/EntraID) and a Sentinel authz token (authorization).
 
 ## Setup
 
 ```typescript
-import { SentinelAuthz } from '@sentinel-auth/js'
+import { SentinelAuthz, IdpConfigs } from '@sentinel-auth/js'
 
 const authz = new SentinelAuthz({
   sentinelUrl: 'http://localhost:9003',
+  idps: { google: IdpConfigs.google('your-google-client-id') },
 })
 ```
 
-### Configuration Options
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `sentinelUrl` | `string` | *required* | Base URL of the Sentinel service |
-| `storage` | `AuthzTokenStore` | `AuthzLocalStorageStore` | Token storage backend |
-| `autoRefresh` | `boolean` | `true` | Auto-refresh authz token before expiry |
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sentinelUrl` | `string` | required | Base URL of the Sentinel service |
+| `idps` | `Record<string, IdpConfig>` | `{}` | IdP configs keyed by provider name |
+| `redirectUri` | `string` | `${origin}/auth/callback` | OAuth redirect URI |
+| `storage` | `AuthzTokenStore` | `AuthzMemoryStore` | Token storage backend |
+| `autoRefresh` | `boolean` | `true` | Refresh authz token before expiry |
 | `refreshBuffer` | `number` | `30` | Seconds before expiry to trigger refresh |
 
-## Auth Flow
+Built-in IdP helpers: `IdpConfigs.google(clientId)`, `IdpConfigs.entraId(clientId, tenantId)`. Pass a custom `IdpConfig` object for other providers.
+
+## How it works
 
 ```
-1. User signs in with IdP (Google Sign-In)  ->  IdP token (1hr, signed by Google)
-2. resolve(idpToken, 'google')              ->  Sentinel validates, returns workspaces
-3. selectWorkspace(idpToken, 'google', id)  ->  Sentinel issues authz token (5min)
-4. Tokens stored locally                    ->  Auto-refresh before expiry
+1. authz.login('google')              -> redirect to Google
+2. Google redirects back with #id_token=...
+3. authz.handleCallback()             -> extract token, verify nonce
+4. authz.resolve(idpToken, provider)  -> POST /authz/resolve, get workspaces
+5. authz.selectWorkspace(...)         -> POST /authz/resolve with workspace_id
+6. Both tokens stored, auto-refresh scheduled
+```
+
+## Methods
+
+### login(provider)
+
+Redirect to the IdP's authorization page. Provider must be configured in `idps`.
+
+```typescript
+authz.login('google')
+```
+
+### handleCallback()
+
+Extract `id_token` from URL hash after IdP redirect. Verifies nonce. Returns `null` if no hash present.
+
+```typescript
+const cb = authz.handleCallback()
+// { idpToken: 'eyJ...', provider: 'google' } | null
 ```
 
 ### resolve(idpToken, provider)
 
-Validate an IdP token with Sentinel and get the user's available workspaces.
+Validate IdP token with Sentinel, discover workspaces.
 
 ```typescript
 const result = await authz.resolve(idpToken, 'google')
-// result.user = { id, email, name }
-// result.workspaces = [{ id, name, slug, role }]
+// result.user       -> { id, email, name }
+// result.workspaces -> [{ id, name, slug, role }]
 ```
 
 ### selectWorkspace(idpToken, provider, workspaceId)
 
-Exchange the IdP token for a Sentinel authz token for a specific workspace.
+Exchange IdP token for a Sentinel authz token scoped to a workspace.
 
 ```typescript
-await authz.selectWorkspace(idpToken, 'google', 'workspace-uuid')
-// Both tokens are now stored, user is authenticated
+await authz.selectWorkspace(idpToken, 'google', 'ws-uuid')
 ```
 
-### refresh()
-
-Re-resolve the authz token using stored IdP token + workspace. Called automatically when `autoRefresh` is enabled.
-
-### logout()
-
-Clear all stored tokens and notify listeners.
-
-## Token Access
+### getUser() / isAuthenticated
 
 ```typescript
 const user = authz.getUser()
 // { userId, email, name, workspaceId, workspaceSlug, workspaceRole, groups }
-
-if (authz.isAuthenticated) { ... }
+if (authz.isAuthenticated) { /* ... */ }
 ```
 
-## Auth-Aware Fetch
+### getHeaders()
 
-The `fetch` method injects both tokens and retries on 401:
+```typescript
+authz.getHeaders()
+// { Authorization: 'Bearer <idp_token>', 'X-Authz-Token': '<authz_token>' }
+```
+
+### fetch / fetchJson
+
+Inject dual-token headers. On 401, refresh and retry once.
 
 ```typescript
 const res = await authz.fetch('/api/notes')
-```
-
-Behavior:
-
-1. Sets `Authorization: Bearer <idpToken>` header
-2. Sets `X-Authz-Token: <authzToken>` header
-3. If 401, attempts refresh (re-resolve with stored IdP token)
-4. If refresh succeeds, retries the request
-
-### fetchJson&lt;T&gt;
-
-Convenience wrapper that also sets `Content-Type` and parses JSON:
-
-```typescript
 const notes = await authz.fetchJson<Note[]>('/api/notes')
 ```
 
-## Dual-Token Headers
+### onAuthStateChange(cb) / logout() / destroy()
 
 ```typescript
-const headers = authz.getHeaders()
-// {
-//   'Authorization': 'Bearer <idp_token>',
-//   'X-Authz-Token': '<authz_token>'
-// }
+const unsub = authz.onAuthStateChange((user) => { /* ... */ })
+authz.logout()   // clear tokens, notify listeners
+authz.destroy()  // clean up timers
 ```
 
-## Events
+## Token storage
+
+| Backend | Persistence |
+|---------|-------------|
+| `AuthzMemoryStore` (default) | Lost on page refresh |
+| `AuthzLocalStorageStore` | Survives refresh, shared across tabs |
 
 ```typescript
-const unsub = authz.onAuthStateChange((user) => {
-  if (user) console.log('Authenticated:', user.email)
-  else console.log('Logged out')
+import { SentinelAuthz, AuthzLocalStorageStore } from '@sentinel-auth/js'
+const authz = new SentinelAuthz({
+  sentinelUrl: '...', storage: new AuthzLocalStorageStore(),
 })
 ```
 
-## Token Storage
-
-| Backend | Use Case |
-|---------|----------|
-| `AuthzLocalStorageStore` (default) | Browser apps -- persists across tabs |
-| `AuthzMemoryStore` | SSR, testing, or when localStorage unavailable |
-
-Storage keys: `sentinel_idp_token`, `sentinel_authz_token`, `sentinel_idp_provider`, `sentinel_workspace_id`.
-
-## Cleanup
+## Complete example
 
 ```typescript
-authz.destroy() // Clears refresh timer, removes listeners
+import { SentinelAuthz, IdpConfigs, AuthzLocalStorageStore } from '@sentinel-auth/js'
+
+const authz = new SentinelAuthz({
+  sentinelUrl: 'http://localhost:9003',
+  idps: { google: IdpConfigs.google('your-client-id') },
+  storage: new AuthzLocalStorageStore(),
+})
+
+// Login page
+authz.login('google')
+
+// Callback page (/auth/callback)
+const cb = authz.handleCallback()
+if (cb) {
+  const result = await authz.resolve(cb.idpToken, cb.provider)
+  if (result.workspaces?.length === 1) {
+    await authz.selectWorkspace(cb.idpToken, cb.provider, result.workspaces[0].id)
+    window.location.href = '/dashboard'
+  }
+}
+
+// After auth
+const notes = await authz.fetchJson<Note[]>('/api/notes')
 ```
 
-## Compared to SentinelAuth
+## AuthZ vs Proxy mode
 
-| | SentinelAuthz (AuthZ Mode) | SentinelAuth (Proxy Mode) |
+| | AuthZ (`SentinelAuthz`) | Proxy (`SentinelAuth`) |
 |---|---|---|
-| IdP interaction | You handle it (Google Sign-In, etc.) | Sentinel handles redirect flow |
-| Token exchange | resolve() + selectWorkspace() | login() -> callback -> selectWorkspace() |
-| Tokens stored | IdP token + authz token | Access token + refresh token |
-| Headers sent | Authorization + X-Authz-Token | Authorization only |
-| PKCE | Not needed (IdP SDK handles it) | Generated by SentinelAuth |
-
-## Next Steps
-
-- [React Integration](react.md) -- AuthzProvider and hooks
-- [Next.js Integration](nextjs.md) -- Edge Middleware
-- [Server Utilities](server.md) -- JWT verification
+| IdP interaction | You configure IdPs, SDK redirects | Sentinel manages redirect flow |
+| Tokens stored | IdP token + authz token | Access + refresh token |
+| Headers sent | `Authorization` + `X-Authz-Token` | `Authorization` only |
+| PKCE | Not needed (implicit flow) | Generated by SDK |
