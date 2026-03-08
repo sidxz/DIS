@@ -1,47 +1,113 @@
 ---
 title: Sentinel Auth
+description: Authentication proxy and authorization microservice for your applications
 ---
+
+![Sentinel Auth](assets/images/splash.png)
 
 # Sentinel
 
-Sentinel is an authentication proxy and authorization microservice.
+An authentication proxy and authorization microservice. Sentinel handles OAuth2/OIDC authentication from external IdPs, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
 
-- **Proxies IdP authentication** -- users sign in with Google, GitHub, or EntraID. Sentinel validates their IdP token and issues an authorization JWT.
-- **Manages workspaces** -- multi-tenant workspace membership, groups, and role assignments.
-- **Three-tier authorization** -- workspace roles (JWT claims), custom RBAC roles (database), and Zanzibar-style entity ACLs (per-resource).
+Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7**, and **Authlib**.
 
-## How it works
+---
 
-Your app authenticates users directly with your identity provider. Sentinel does not handle login -- it handles what comes after. Your frontend sends the IdP token to Sentinel, gets back an authz token, and your backend validates both.
+<div class="grid cards" markdown>
+
+-   :material-shield-lock:{ .lg .middle } **AuthZ Mode (Recommended)**
+
+    ---
+
+    Your app handles IdP login directly (Google, GitHub, EntraID). Sentinel validates the IdP token and issues an authorization JWT. Dual-token design with `idp_sub` binding.
+
+    [:octicons-arrow-right-24: How it works](guide/how-it-works.md)
+
+-   :material-office-building:{ .lg .middle } **Multi-Tenant Workspaces**
+
+    ---
+
+    Isolate users, groups, and resources by workspace. Role-based access at the workspace level with `owner`, `admin`, `editor`, and `viewer` roles embedded in every JWT.
+
+    [:octicons-arrow-right-24: Workspaces](guide/workspaces.md)
+
+-   :material-lock-check:{ .lg .middle } **Zanzibar-Style Permissions**
+
+    ---
+
+    Generic resource permissions with `service_name`, `resource_type`, and `resource_id`. Check access, list accessible resources, and share via ACLs.
+
+    [:octicons-arrow-right-24: Permissions](guide/permissions.md)
+
+-   :material-account-group:{ .lg .middle } **Custom RBAC**
+
+    ---
+
+    Define service actions (`notes:export`, `reports:generate`), create roles, assign to users. Check permissions at runtime with a single dependency.
+
+    [:octicons-arrow-right-24: Roles](guide/roles.md)
+
+-   :material-language-python:{ .lg .middle } **Python SDK**
+
+    ---
+
+    `pip install sentinel-auth-sdk` and integrate in minutes. Middleware, FastAPI dependencies, permission and role clients with a typed async API.
+
+    [:octicons-arrow-right-24: Python SDK](sdk/index.md)
+
+-   :material-language-typescript:{ .lg .middle } **JS / TS SDK**
+
+    ---
+
+    Three packages for browser, React, and Next.js. Token management, auth-aware fetch, React hooks, Edge Middleware, and server-side JWT verification.
+
+    [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
+
+</div>
+
+---
 
 ## Quick integration
-
-Install the SDK and protect a route in four lines:
 
 ```python
 from sentinel_auth import Sentinel
 
 sentinel = Sentinel(
-    auth_url="https://sentinel.example.com",
+    base_url="http://localhost:9003",
     service_name="my-app",
     service_key="sk_...",
+    mode="authz",
+    idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
 )
 
-# FastAPI dependency -- validates IdP token + authz token, returns user
-user = sentinel.require_user
+app = FastAPI(lifespan=sentinel.lifespan)
+sentinel.protect(app)
 
 @app.get("/projects")
-async def list_projects(user=Depends(user)):
+async def list_projects(user=Depends(sentinel.require_user)):
     return await get_projects(user.workspace_id)
 ```
 
-```bash
-pip install sentinel-auth-sdk
-```
+---
 
-## Next steps
+## Get started
 
-- [Quickstart](getting-started/quickstart.md) -- run Sentinel and connect your first app
-- [How It Works](guide/how-it-works.md) -- architecture and auth flow
-- [Python SDK](sdk/index.md) -- middleware, dependencies, permissions, roles
-- [JS/TS SDK](js-sdk/index.md) -- browser, React, and Next.js packages
+<div class="grid cards" markdown>
+
+-   :material-rocket-launch:{ .lg .middle } **Quickstart**
+
+    ---
+
+    Run Sentinel, configure an IdP, and connect your first app in 5 minutes.
+
+    [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
+
+-   :material-book-open-variant:{ .lg .middle } **Tutorials**
+
+    ---
+
+    Build a Team Notes app with all three authorization tiers.
+
+    [:octicons-arrow-right-24: React + FastAPI](tutorial/react.md) | [:octicons-arrow-right-24: Next.js](tutorial/nextjs.md)
+
+</div>
