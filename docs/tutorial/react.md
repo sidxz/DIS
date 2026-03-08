@@ -8,7 +8,7 @@ Build a Team Notes app with FastAPI and React that uses all three Sentinel autho
 
 ## Prerequisites
 
-- Sentinel running on `:9003` ([Getting Started](../getting-started/installation.md))
+- Sentinel running on `:9003` ([Getting Started](../getting-started/index.md))
 - A service app created in the admin panel (you need the `sk_...` key)
 - A client app registered with redirect URI `http://localhost:5173/auth/callback`
 - Google OAuth client ID

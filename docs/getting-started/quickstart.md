@@ -214,5 +214,5 @@ GET /api/me  -----------------------------------------------------------> AuthzM
 
 - Review all settings in the [Configuration](configuration.md) reference.
 - Read [How It Works](../guide/how-it-works.md) for the full architecture.
-- Follow the [Tutorial](../guide/tutorial.md) to build a complete app with RBAC and entity ACLs.
+- Follow the [Tutorial](../tutorial/react.md) to build a complete app with RBAC and entity ACLs.
 - Explore the [Python SDK](../sdk/index.md) and [JS/TS SDK](../js-sdk/index.md) references.
