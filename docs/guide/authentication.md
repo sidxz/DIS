@@ -1,209 +1,114 @@
 # Authentication
 
-The Sentinel Auth does not manage local user credentials. Users always authenticate through external identity providers (IdPs) via OAuth2 or OpenID Connect. The service acts as an OAuth2 client, handling the redirect flow, extracting user information from the provider, and issuing its own JWT tokens.
+## Supported IdPs
 
-## Authentication Modes
+Sentinel proxies authentication from three identity providers. Provider registration is conditional -- if the environment variables are not set, the provider is not available.
 
-Sentinel supports two authentication modes:
+| Provider | Protocol | PKCE | Scopes |
+|---|---|---|---|
+| Google | OIDC | S256 | `openid email profile` |
+| GitHub | OAuth2 | None | `user:email` |
+| Microsoft Entra ID | OIDC | S256 | `openid email profile` |
 
-### AuthZ Mode (Recommended)
+**Google** -- Standard OIDC with automatic discovery. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
-Client apps authenticate users directly with their identity provider using the IdP's native SDK (Google Sign-In, MSAL, etc.). The app then calls Sentinel's `POST /authz/resolve` with the IdP token to get an authorization JWT.
+**GitHub** -- OAuth2 only (not OIDC, no PKCE). User info fetched via GitHub API. If the primary email is not in the profile response, it is fetched from `GET /user/emails`. Set `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`.
 
-```
-Browser                        Sentinel                     IdP
-  │                              │                           │
-  │  1. Sign in with Google      │                           │
-  │  ──────────────────────────────────────────────────────► │
-  │  ◄── IdP token (1hr)         │                           │
-  │                              │                           │
-  │  2. POST /authz/resolve      │                           │
-  │  { idp_token, provider }  ──►│                           │
-  │                              │  Validates token vs JWKS  │
-  │                              │  JIT provisions user      │
-  │  ◄── { authz_token, user }   │                           │
-  │                              │                           │
-  │  3. API calls with both      │                           │
-  │  Authorization: Bearer <idp> │                           │
-  │  X-Authz-Token: <authz>     │                           │
-```
+**Entra ID** -- OIDC with tenant-specific discovery. Set `ENTRA_CLIENT_ID`, `ENTRA_CLIENT_SECRET`, and `ENTRA_TENANT_ID`.
 
-**Key properties:**
-- Client handles IdP sign-in natively — no redirect through Sentinel
-- Sentinel only handles authorization (workspace roles, RBAC, permissions)
-- Two tokens per request: IdP token (identity) + authz token (authorization)
-- `idp_sub` binding prevents token misuse
+See [How Sentinel Works](how-it-works.md) for the full login flows in both AuthZ and Proxy modes.
 
-See [AuthZ Mode Architecture](../architecture/authz-mode.md) for the full security analysis.
+## Token Types
 
-### Full Proxy Mode
+| Token | Audience | TTL | Purpose |
+|---|---|---|---|
+| Access | `sentinel:access` | 15 min | Identity + authorization in Proxy mode. Carries user info, workspace context, and group memberships. |
+| Refresh | `sentinel:refresh` | 7 days | Silent renewal of access tokens. Supports rotation with reuse detection. |
+| Admin | `sentinel:admin` | 60 min | Admin panel sessions. Carries `admin: true` flag. |
+| Authz | `sentinel:authz` | 5 min | Authorization-only in AuthZ mode. Carries workspace role and RBAC actions. No identity -- identity comes from the IdP token. |
 
-Sentinel handles the entire OAuth2/OIDC flow — login redirect, provider callback, token exchange, and JWT issuance. Client apps redirect to Sentinel and receive a single JWT.
+All tokens are RS256-signed JWTs. The algorithm is hardcoded at both encode and decode time to prevent algorithm substitution attacks. Audience validation is mandatory on every decode call.
 
-The existing Login Flow diagram below describes the proxy mode flow.
+## JWT Claims
 
-## Login Flow
+### Access Token Claims
 
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant App as Frontend App
-    participant IS as Identity Service
-    participant IdP as OAuth Provider
-    participant Redis
+| Claim | Type | Example | Description |
+|---|---|---|---|
+| `iss` | string | `https://auth.example.com` | Issuer. Sentinel's `BASE_URL`. |
+| `sub` | string (UUID) | `"d4f5a..."` | User ID. |
+| `jti` | string (UUID) | `"8b3c1..."` | Unique token ID. Enables per-token revocation via Redis denylist. |
+| `aud` | string | `"sentinel:access"` | Audience. Always `sentinel:access`. |
+| `email` | string | `"alice@co.com"` | User's email address. |
+| `name` | string | `"Alice Chen"` | User's display name. |
+| `wid` | string (UUID) | `"a1b2c..."` | Workspace ID. |
+| `wslug` | string | `"acme"` | Workspace slug. |
+| `wrole` | string | `"editor"` | Workspace role: `owner`, `admin`, `editor`, or `viewer`. |
+| `groups` | string[] | `["uuid1", "uuid2"]` | Group IDs the user belongs to in this workspace. |
+| `iat` | number | `1709827200` | Issued-at timestamp (UTC). |
+| `exp` | number | `1709828100` | Expiration timestamp (UTC). `iat` + 15 minutes. |
+| `type` | string | `"access"` | Token type discriminator. |
 
-    Browser->>App: Click "Sign in with Google"
-    App->>App: Generate PKCE code_verifier + code_challenge (S256)
-    App->>IS: GET /auth/login/{provider}<br/>?redirect_uri=Y&code_challenge=Z&code_challenge_method=S256
-    IS->>IS: Validate redirect_uri<br/>(must match an active allowed app)
-    IS->>IdP: Redirect to authorization URL<br/>(with PKCE code_challenge if supported)
-    IdP->>Browser: Show consent screen
-    Browser->>IdP: Grant consent
-    IdP->>IS: GET /auth/callback/{provider}<br/>(authorization code)
-    IS->>IdP: Exchange code for tokens<br/>(with PKCE code_verifier if applicable)
-    IdP-->>IS: Access token + ID token (OIDC)
-    IS->>IS: Extract user info from token/profile
-    IS->>IS: find_or_create_user()
-    IS->>Redis: Store auth code + code_challenge (5 min TTL)
-    IS->>App: Redirect to redirect_uri with ?code=X
-    App->>IS: GET /auth/workspaces?code=X
-    IS->>Redis: Peek auth code (non-consuming)
-    IS-->>App: List of workspaces
-    App->>IS: POST /auth/token<br/>{code, workspace_id, code_verifier}
-    IS->>IS: Verify SHA256(code_verifier) == code_challenge
-    IS->>Redis: Consume auth code (single-use)
-    IS-->>App: Access token + Refresh token
-```
+### Authz Token Claims
 
-## Supported Providers
+| Claim | Type | Example | Description |
+|---|---|---|---|
+| `iss` | string | `https://auth.example.com` | Issuer. Sentinel's `BASE_URL`. |
+| `sub` | string (UUID) | `"d4f5a..."` | User ID. |
+| `jti` | string (UUID) | `"8b3c1..."` | Unique token ID. Enables revocation via denylist. |
+| `aud` | string | `"sentinel:authz"` | Audience. Always `sentinel:authz`. |
+| `idp_sub` | string | `"104523..."` | IdP subject identifier. Binds this token to a specific IdP identity. The backend validates that the IdP token's `sub` matches this value. |
+| `svc` | string | `"docu-store"` | Service name. Binds the token to a specific service, preventing cross-service replay. |
+| `wid` | string (UUID) | `"a1b2c..."` | Workspace ID. |
+| `wslug` | string | `"acme"` | Workspace slug. |
+| `wrole` | string | `"editor"` | Workspace role. |
+| `actions` | string[] | `["docs:read", "docs:write"]` | RBAC actions granted to this user for this service in this workspace. |
+| `iat` | number | `1709827200` | Issued-at timestamp (UTC). |
+| `exp` | number | `1709827500` | Expiration timestamp (UTC). `iat` + 5 minutes. |
+| `type` | string | `"authz"` | Token type discriminator. |
 
-| Provider | Protocol | PKCE | Scopes | Notes |
-|----------|----------|------|--------|-------|
-| Google | OIDC | S256 | `openid email profile` | Full OIDC with discovery endpoint |
-| GitHub | OAuth2 | None | `user:email` | Not full OIDC; user info fetched via API |
-| Microsoft Entra ID | OIDC | S256 | `openid email profile` | Tenant-specific discovery endpoint |
+### Refresh Token Claims
 
-### Google
+| Claim | Type | Example | Description |
+|---|---|---|---|
+| `iss` | string | `https://auth.example.com` | Issuer. |
+| `sub` | string (UUID) | `"d4f5a..."` | User ID. |
+| `jti` | string (UUID) | `"8b3c1..."` | Unique token ID. |
+| `aud` | string | `"sentinel:refresh"` | Audience. Always `sentinel:refresh`. |
+| `fid` | string (UUID) | `"f7e8d..."` | Family ID. Groups refresh tokens into rotation families for reuse detection. |
+| `iat` | number | `1709827200` | Issued-at timestamp (UTC). |
+| `exp` | number | `1710432000` | Expiration timestamp (UTC). `iat` + 7 days. |
+| `type` | string | `"refresh"` | Token type discriminator. |
 
-Google uses standard OpenID Connect with automatic discovery via `https://accounts.google.com/.well-known/openid-configuration`. PKCE with S256 code challenge is enabled for enhanced security.
+### Admin Token Claims
 
-```
-Required environment variables:
-  GOOGLE_CLIENT_ID=your-client-id
-  GOOGLE_CLIENT_SECRET=your-client-secret
-```
+| Claim | Type | Example | Description |
+|---|---|---|---|
+| `iss` | string | `https://auth.example.com` | Issuer. |
+| `sub` | string (UUID) | `"d4f5a..."` | User ID. |
+| `jti` | string (UUID) | `"8b3c1..."` | Unique token ID. |
+| `aud` | string | `"sentinel:admin"` | Audience. Always `sentinel:admin`. |
+| `email` | string | `"alice@co.com"` | Admin user's email. |
+| `name` | string | `"Alice Chen"` | Admin user's display name. |
+| `admin` | boolean | `true` | Always `true`. |
+| `iat` | number | `1709827200` | Issued-at timestamp (UTC). |
+| `exp` | number | `1709830800` | Expiration timestamp (UTC). `iat` + 60 minutes. |
+| `type` | string | `"admin_access"` | Token type discriminator. |
 
-### GitHub
+## Token Lifecycle
 
-GitHub supports OAuth2 but not OpenID Connect or PKCE. After the code exchange, user profile data is fetched via the GitHub REST API (`GET /user`). If the primary email is not included in the profile response, the service fetches it from the `GET /user/emails` endpoint.
+### Refresh Rotation with Reuse Detection
 
-```
-Required environment variables:
-  GITHUB_CLIENT_ID=your-client-id
-  GITHUB_CLIENT_SECRET=your-client-secret
-```
+Refresh tokens use a family-based rotation scheme:
 
-### Microsoft Entra ID
+1. On login, a refresh token is issued with a unique `fid` (family ID).
+2. When the client refreshes, the old refresh token is consumed and a new one is issued with the same `fid`.
+3. If a consumed refresh token is presented again (reuse), the entire family is invalidated -- all tokens sharing that `fid` are denied.
 
-Entra ID (formerly Azure AD) uses OIDC with a tenant-specific discovery endpoint. PKCE with S256 is enabled. The tenant ID determines which directory users can authenticate against.
+This detects token theft: if an attacker steals a refresh token and uses it, either the attacker or the legitimate user will trigger reuse detection, invalidating the family.
 
-```
-Required environment variables:
-  ENTRA_CLIENT_ID=your-client-id
-  ENTRA_CLIENT_SECRET=your-client-secret
-  ENTRA_TENANT_ID=your-tenant-id
-```
+### Revocation
 
-## Provider Registration
+Individual tokens are revoked by adding their `jti` to a Redis denylist. The denylist entry TTL matches the token's remaining lifetime, so entries self-clean. Every token validation checks the denylist before accepting the token.
 
-Providers are registered at startup using Authlib's `OAuth` class in `providers.py`. Registration is conditional -- if the environment variables for a provider are not set, that provider is not registered and will not appear in the `GET /auth/providers` response.
-
-```python
-from authlib.integrations.starlette_client import OAuth
-
-oauth = OAuth()
-
-if settings.google_client_id:
-    oauth.register(
-        name="google",
-        client_id=settings.google_client_id,
-        client_secret=settings.google_client_secret,
-        server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-        client_kwargs={"scope": "openid email profile"},
-        code_challenge_method="S256",
-    )
-```
-
-The `GET /auth/providers` endpoint returns the list of currently configured providers, allowing the frontend to render only the available login buttons.
-
-## Callback Flow
-
-When the OAuth provider redirects back to `/auth/callback/{provider}`, the service:
-
-1. **Exchanges the authorization code** for an access token (and ID token for OIDC providers) via Authlib's `authorize_access_token()`.
-
-2. **Extracts user information** depending on the provider type:
-    - **OIDC providers** (Google, Entra ID): User info is parsed from the ID token's `userinfo` claims (`sub`, `email`, `name`, `picture`).
-    - **GitHub**: User info is fetched via the GitHub API (`GET /user`). If the email is not present, a secondary call to `GET /user/emails` retrieves the primary email.
-
-3. **Calls `find_or_create_user()`** which implements the following logic:
-    - Look up the `social_accounts` table by `(provider, provider_user_id)`.
-    - If found, update the existing user's profile (name, avatar) and return.
-    - If not found, check if a user with the same email exists. If so, link the new social account to that user (account linking).
-    - If no user exists at all, create a new `User` record and a `SocialAccount` record.
-    - If the user's email is in the `ADMIN_EMAILS` configuration, automatically set `is_admin = True`.
-
-4. **Generates an authorization code** — a short-lived, single-use code stored in Redis (5 minute TTL) containing the user ID.
-
-5. **Redirects to the client's registered redirect URI** with `?code=X`. The frontend then uses this code to fetch workspaces (`GET /auth/workspaces?code=X`) and exchange for JWT tokens (`POST /auth/token` with `{code, workspace_id}`). The code is consumed atomically on token exchange and cannot be reused.
-
-## Client App Allowlist
-
-Before an application can use the OAuth login flow, it must be registered as a **client app** through the admin panel or API. Sentinel proxies authentication from external IdPs — client apps are an allowlist of applications permitted to use the service, not OAuth2 clients. Each client app has:
-
-- **`name`** — a human-readable label for the application
-- **`redirect_uris`** — a list of allowed redirect URIs; the `redirect_uri` parameter in the login request must match one of these exactly
-- **`is_active`** — can be deactivated to block an app without deleting it
-
-The `GET /auth/login/{provider}` endpoint requires a `redirect_uri` query parameter. The service validates that the URI belongs to at least one active client app before initiating the OAuth flow.
-
-Manage client apps via the admin API:
-
-```
-POST   /admin/client-apps           # Register a new app
-GET    /admin/client-apps           # List all
-GET    /admin/client-apps/{id}      # Get one
-PATCH  /admin/client-apps/{id}      # Update name, redirect_uris, or is_active
-DELETE /admin/client-apps/{id}      # Delete
-```
-
-## Authorization Codes
-
-Authorization codes are used instead of passing raw `user_id` values in redirect URLs. This prevents token theft by anyone who knows a user's UUID.
-
-| Property | Value |
-|----------|-------|
-| Storage | Redis (`ac:{code}` key) |
-| TTL | 5 minutes |
-| Usage | Single-use (atomic `GETDEL` on token exchange) |
-| Contents | `{user_id, code_challenge, code_challenge_method}` |
-
-The code is **peeked** (non-destructive read) during workspace listing and **consumed** (atomic delete) during token exchange, ensuring it can only be used once to obtain JWTs.
-
-### PKCE on Sentinel Auth Codes
-
-In addition to IdP-level PKCE (between Sentinel and the OAuth provider), Sentinel enforces **mandatory PKCE S256 on its own authorization codes** (between the frontend app and Sentinel). This prevents authorization code interception on the Sentinel side:
-
-1. The frontend generates a `code_verifier` and `code_challenge` (SHA-256) before initiating login
-2. The `code_challenge` and `code_challenge_method` are sent as query parameters on `GET /auth/login/{provider}`
-3. Sentinel stores the `code_challenge` alongside the auth code in Redis
-4. When the frontend exchanges the code at `POST /auth/token`, it must include the `code_verifier`
-5. Sentinel verifies that `SHA256(code_verifier) == code_challenge` before issuing tokens
-
-## Important Design Notes
-
-- **No local passwords**: The service never stores or verifies passwords. All authentication is delegated to external IdPs.
-- **Account linking**: If a user signs in with Google and later signs in with GitHub using the same email, both social accounts are linked to the same user record.
-- **Redirect URI allowlist**: Applications must be registered with approved redirect URIs before they can initiate OAuth flows. Unregistered or inactive redirect URIs are rejected at the login endpoint.
-- **Rate limiting**: Login and callback endpoints are rate-limited to 10 requests per minute per IP to prevent abuse.
-- **Session middleware**: Authlib requires Starlette session middleware for the OAuth state parameter. The session secret is configured via `SESSION_SECRET_KEY`.
+Logout revokes both the access token and the refresh token's entire family.

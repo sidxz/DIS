@@ -1,271 +1,210 @@
-# Permissions
+# Entity Permissions (ACLs)
 
-The Sentinel Auth implements a three-tier authorization model: workspace roles (stateless, embedded in the JWT), custom RBAC roles (action-based, resolved via service calls), and entity-level access control lists (Zanzibar-style, resolved via service calls). This design keeps common authorization checks fast while supporting both action-based and resource-level fine-grained access control.
+Per-resource access control: "can user X view document Y?" Resources are registered with Sentinel using a generic model. Access is resolved through ownership, visibility, and explicit shares.
 
-## Three-Tier System
+```python
+# Register a resource when it's created
+await sentinel.permissions.register_resource(
+    resource_type="document",
+    resource_id=doc.id,
+    workspace_id=user.workspace_id,
+    owner_id=user.user_id,
+    visibility="workspace",
+)
 
-### Tier 1: Workspace Roles (from JWT)
+# Check access
+allowed = await sentinel.permissions.can(token, "document", doc.id, "edit")
 
-Workspace roles (`owner`, `admin`, `editor`, `viewer`) are embedded in the access token and can be checked by any consuming application without calling Sentinel. This is ideal for coarse-grained authorization:
+# Share with another user
+await sentinel.permissions.share(
+    token=token,
+    resource_type="document",
+    resource_id=doc.id,
+    grantee_type="user",
+    grantee_id=collaborator_id,
+    permission="edit",
+)
+```
 
-- Can this user create resources? (editor+)
-- Can this user manage members? (admin+)
-- Can this user delete the workspace? (owner only)
+## Resource Model
 
-No service call is needed. The consuming application reads the `wrole` claim from the JWT.
+Every resource is identified by three fields, making the system generic across services:
 
-### Tier 2: Custom Roles / RBAC (via service call)
+| Field | Type | Example |
+|-------|------|---------|
+| `service_name` | string | `"docu-store"` |
+| `resource_type` | string | `"document"` |
+| `resource_id` | UUID | `"a1b2c3d4-..."` |
 
-For action-based authorization ("Can this user export reports?"), the consuming application calls Sentinel's `/roles/check-action` endpoint. Custom roles allow services to define application-specific actions and organize them into named roles within a workspace.
-
-See the [Custom Roles guide](roles.md) for full documentation.
-
-### Tier 3: Entity ACLs (via service call)
-
-For resource-level authorization ("Can user X edit document Y?"), the consuming application calls Sentinel's `/permissions/check` endpoint. The service resolves the permission by checking ownership, workspace role, resource visibility, direct user shares, and group shares.
-
-## Generic Resource Model
-
-Resources are registered with four identifying fields:
+Additional fields on registration:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `service_name` | `string` | The consuming application (e.g., `docu-store`, `analytics`) |
-| `resource_type` | `string` | The kind of resource (e.g., `document`, `dashboard`) |
-| `resource_id` | `UUID` | The unique identifier of the resource |
-| `workspace_id` | `UUID` | The workspace this resource belongs to |
+| `workspace_id` | UUID | The workspace this resource belongs to |
+| `owner_id` | UUID | The user who owns the resource |
+| `visibility` | string | `"private"` or `"workspace"` (default: `"workspace"`) |
 
-Additional fields on the registration:
+The `(service_name, resource_type, resource_id)` tuple is unique. Registration is idempotent (upsert with `ON CONFLICT DO NOTHING`).
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `owner_id` | `UUID` | The user who created/owns the resource |
-| `visibility` | `string` | `"private"` or `"workspace"` (default: `"workspace"`) |
-
-### Registering a Resource
-
-When a consuming application creates a new resource, it registers it with Sentinel:
-
-```
-POST /permissions/register
-X-Service-Key: your-service-key
-
-{
-  "service_name": "docu-store",
-  "resource_type": "document",
-  "resource_id": "doc-uuid-here",
-  "workspace_id": "workspace-uuid",
-  "owner_id": "user-uuid",
-  "visibility": "workspace"
-}
-```
-
-## Visibility Modes
+## Visibility
 
 | Mode | Behavior |
 |------|----------|
 | `private` | Only the owner and users/groups with explicit shares can access |
-| `workspace` | All workspace members can view; editors can edit; explicit shares extend access further |
+| `workspace` | All workspace members can view; editors can also edit |
 
-Visibility can be updated after registration:
+Change visibility after registration:
 
 ```
 PATCH /permissions/{permission_id}/visibility
 X-Service-Key: your-service-key
-
-{
-  "visibility": "private"
-}
+{ "visibility": "private" }
 ```
 
 ## Permission Resolution
 
-The `check_permission` function follows a 7-step resolution algorithm. It short-circuits at the first definitive result.
+The `check_permission` function follows a 7-step algorithm, short-circuiting at the first match:
 
 ```mermaid
 flowchart TD
-    Start([check_permission called]) --> Step1
+    Start([check_permission]) --> S1
 
-    Step1{1. Resource exists?}
-    Step1 -->|No| Deny1[DENY]
-    Step1 -->|Yes| Step2
+    S1{1. Resource registered?}
+    S1 -->|No| D1[DENY]
+    S1 -->|Yes| S2
 
-    Step2{2. Same workspace?}
-    Step2 -->|No| Deny2[DENY]
-    Step2 -->|Yes| Step3
+    S2{2. Same workspace?}
+    S2 -->|No| D2[DENY]
+    S2 -->|Yes| S3
 
-    Step3{3. Is user the owner?}
-    Step3 -->|Yes| Allow1[ALLOW]
-    Step3 -->|No| Step4
+    S3{3. Is owner?}
+    S3 -->|Yes| A1[ALLOW]
+    S3 -->|No| S4
 
-    Step4{4. Is user admin or owner role?}
-    Step4 -->|Yes| Allow2[ALLOW]
-    Step4 -->|No| Step5
+    S4{4. Admin or owner role?}
+    S4 -->|Yes| A2[ALLOW]
+    S4 -->|No| S5
 
-    Step5{5. Is resource workspace-visible?}
-    Step5 -->|Yes| Step5a{Action is view?}
-    Step5 -->|No| Step6
+    S5{5. Workspace-visible?}
+    S5 -->|No| S6
+    S5 -->|Yes| S5a{view?}
 
-    Step5a -->|Yes| Allow3[ALLOW]
-    Step5a -->|No| Step5b{Action is edit AND<br/>role is editor?}
+    S5a -->|Yes| A3[ALLOW]
+    S5a -->|No| S5b{edit + editor role?}
 
-    Step5b -->|Yes| Allow4[ALLOW]
-    Step5b -->|No| Step6
+    S5b -->|Yes| A4[ALLOW]
+    S5b -->|No| S6
 
-    Step6{6. Direct user share exists?}
-    Step6 -->|Yes, action=view| Allow5[ALLOW]
-    Step6 -->|Yes, action=edit<br/>AND share=edit| Allow6[ALLOW]
-    Step6 -->|No or insufficient| Step7
+    S6{6. User share?}
+    S6 -->|view share + view action| A5[ALLOW]
+    S6 -->|edit share + edit action| A6[ALLOW]
+    S6 -->|No match| S7
 
-    Step7{7. Group share exists?}
-    Step7 -->|Yes, action=view| Allow7[ALLOW]
-    Step7 -->|Yes, action=edit<br/>AND share=edit| Allow8[ALLOW]
-    Step7 -->|No or insufficient| Deny3[DENY]
+    S7{7. Group share?}
+    S7 -->|view share + view action| A7[ALLOW]
+    S7 -->|edit share + edit action| A8[ALLOW]
+    S7 -->|No match| D3[DENY]
 
-    style Deny1 fill:#f44,color:#fff
-    style Deny2 fill:#f44,color:#fff
-    style Deny3 fill:#f44,color:#fff
-    style Allow1 fill:#4a4,color:#fff
-    style Allow2 fill:#4a4,color:#fff
-    style Allow3 fill:#4a4,color:#fff
-    style Allow4 fill:#4a4,color:#fff
-    style Allow5 fill:#4a4,color:#fff
-    style Allow6 fill:#4a4,color:#fff
-    style Allow7 fill:#4a4,color:#fff
-    style Allow8 fill:#4a4,color:#fff
+    style D1 fill:#f44,color:#fff
+    style D2 fill:#f44,color:#fff
+    style D3 fill:#f44,color:#fff
+    style A1 fill:#4a4,color:#fff
+    style A2 fill:#4a4,color:#fff
+    style A3 fill:#4a4,color:#fff
+    style A4 fill:#4a4,color:#fff
+    style A5 fill:#4a4,color:#fff
+    style A6 fill:#4a4,color:#fff
+    style A7 fill:#4a4,color:#fff
+    style A8 fill:#4a4,color:#fff
 ```
 
-### Step-by-Step Explanation
+### Step by Step
 
-1. **Resource exists?** -- Look up the resource by `(service_name, resource_type, resource_id)`. If not registered, deny.
-
-2. **Same workspace?** -- Compare the resource's `workspace_id` with the user's `workspace_id` from the JWT. Cross-workspace access is always denied.
-
-3. **Is owner?** -- If the user is the resource owner (`owner_id`), grant full access (view and edit).
-
-4. **Is admin/owner role?** -- Workspace admins and owners have full access to all resources in their workspace, regardless of visibility or explicit shares.
-
-5. **Is workspace-visible?** -- If `visibility = "workspace"`:
-    - All workspace members can **view**.
-    - Users with the `editor` role can also **edit**.
-    - Viewers cannot edit workspace-visible resources unless they have an explicit share.
-
-6. **Check direct user shares** -- Look for a `resource_shares` entry where `grantee_type = "user"` and `grantee_id = user_id`. A `view` share allows viewing; an `edit` share allows both viewing and editing.
-
-7. **Check group shares** -- Look for `resource_shares` entries where `grantee_type = "group"` and `grantee_id` is in the user's `groups` list from the JWT. Same permission logic as direct shares.
-
-8. **Default deny** -- If none of the above conditions match, access is denied.
+1. **Resource registered?** Look up by `(service_name, resource_type, resource_id)`. Not found = deny.
+2. **Same workspace?** The resource's `workspace_id` must match the user's JWT `wid`. Cross-workspace = deny.
+3. **Owner?** If `owner_id == user_id`, full access (view and edit).
+4. **Admin/owner role?** Workspace admins and owners have full access to all resources in the workspace.
+5. **Workspace-visible?** If `visibility = "workspace"`: all members can view; users with `editor` role can also edit. Viewers cannot edit unless they have an explicit share.
+6. **User share?** Check `resource_shares` for `grantee_type = "user"`, `grantee_id = user_id`. A `view` share grants view; an `edit` share grants both view and edit.
+7. **Group share?** Check `resource_shares` for `grantee_type = "group"`, `grantee_id IN (user's group IDs from JWT)`. Same permission logic as user shares.
+8. **Default deny.**
 
 ## Share Types
 
-Shares grant specific permissions to individual users or groups:
+Shares grant access to individual users or [groups](groups.md):
 
-| Permission | Allows |
-|-----------|--------|
-| `view` | Read access to the resource |
-| `edit` | Read and write access to the resource |
+| `grantee_type` | `permission` | Effect |
+|---|---|---|
+| `user` | `view` | User can view the resource |
+| `user` | `edit` | User can view and edit the resource |
+| `group` | `view` | All group members can view |
+| `group` | `edit` | All group members can view and edit |
 
-### Creating a Share
+### Creating Shares
 
+```python
+# Share with a user
+await sentinel.permissions.share(
+    token=token,
+    resource_type="document",
+    resource_id=doc_id,
+    grantee_type="user",
+    grantee_id=user_id,
+    permission="edit",
+)
+
+# Share with a group
+await sentinel.permissions.share(
+    token=token,
+    resource_type="document",
+    resource_id=doc_id,
+    grantee_type="group",
+    grantee_id=group_id,
+    permission="view",
+)
 ```
-POST /permissions/{permission_id}/share
-X-Service-Key: your-service-key
-Authorization: Bearer {user-jwt}
 
-{
-  "grantee_type": "user",
-  "grantee_id": "target-user-uuid",
-  "permission": "edit"
-}
-```
-
-### Revoking a Share
+### Revoking Shares
 
 ```
 DELETE /permissions/{permission_id}/share
 X-Service-Key: your-service-key
-
-{
-  "grantee_type": "user",
-  "grantee_id": "target-user-uuid"
-}
+{ "grantee_type": "user", "grantee_id": "user-uuid" }
 ```
 
 ## Accessible Resources Lookup
 
-The `/permissions/accessible` endpoint returns all resource IDs that a user can access for a given `service_name`, `resource_type`, and `action`. This is useful for building filtered list views (e.g., "show me all documents I can view").
+List all resource IDs a user can access, useful for filtered list views:
 
-```
-POST /permissions/accessible
-X-Service-Key: your-service-key
-Authorization: Bearer {user-jwt}
+```python
+resource_ids, has_full_access = await sentinel.permissions.accessible(
+    token=token,
+    resource_type="document",
+    action="view",
+    workspace_id=workspace_id,
+)
 
-{
-  "service_name": "docu-store",
-  "resource_type": "document",
-  "workspace_id": "workspace-uuid",
-  "action": "view",
-  "limit": 100
-}
-```
-
-Response:
-
-```json
-{
-  "resource_ids": ["doc-1", "doc-2", "doc-3"],
-  "has_full_access": false
-}
+if has_full_access:
+    # Admin/owner — skip filtering, show everything
+    docs = await get_all_docs(workspace_id)
+else:
+    docs = await get_docs_by_ids(resource_ids)
 ```
 
-When `has_full_access` is `true` (admin/owner with no limit), the `resource_ids` list may be empty -- the caller should skip resource ID filtering entirely.
+When `has_full_access` is `True` (admin/owner with no limit), `resource_ids` may be empty -- the caller should skip ID filtering entirely.
 
-## Checking Multiple Permissions
-
-The `/permissions/check` endpoint accepts a batch of checks in a single request:
+## Database Schema
 
 ```
-POST /permissions/check
-X-Service-Key: your-service-key
-Authorization: Bearer {user-jwt}
+resource_permissions              One row per registered resource
+  UNIQUE(service_name, resource_type, resource_id)
+  FK workspace_id -> workspaces (CASCADE)
+  FK owner_id -> users (SET NULL)
+  CHECK visibility IN ('private', 'workspace')
 
-{
-  "checks": [
-    {
-      "service_name": "docu-store",
-      "resource_type": "document",
-      "resource_id": "doc-uuid-1",
-      "action": "edit"
-    },
-    {
-      "service_name": "docu-store",
-      "resource_type": "document",
-      "resource_id": "doc-uuid-2",
-      "action": "view"
-    }
-  ]
-}
-```
-
-Response:
-
-```json
-{
-  "results": [
-    {
-      "service_name": "docu-store",
-      "resource_type": "document",
-      "resource_id": "doc-uuid-1",
-      "action": "edit",
-      "allowed": false
-    },
-    {
-      "service_name": "docu-store",
-      "resource_type": "document",
-      "resource_id": "doc-uuid-2",
-      "action": "view",
-      "allowed": true
-    }
-  ]
-}
+resource_shares                   Grants on resources
+  FK resource_permission_id -> resource_permissions (CASCADE)
+  UNIQUE(resource_permission_id, grantee_type, grantee_id)
+  CHECK grantee_type IN ('user', 'group')
+  CHECK permission IN ('view', 'edit')
 ```
