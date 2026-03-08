@@ -394,7 +394,9 @@ async def logout(
             await token_service.blacklist_access_token(jti, payload["exp"])
     except Exception:
         pass  # Token already expired — jti blacklisting not needed
-    return {"ok": True}
+    response = JSONResponse({"ok": True})
+    response.headers["Clear-Site-Data"] = '"cookies", "storage"'
+    return response
 
 
 # --- Admin auth endpoints ---
@@ -526,5 +528,12 @@ async def admin_logout(request: Request, admin: dict = Depends(require_admin)):
     if jti := admin.get("jti"):
         await token_service.blacklist_access_token(jti, admin["exp"])
     response = JSONResponse({"ok": True})
-    response.delete_cookie("admin_token", path="/")
+    response.headers["Clear-Site-Data"] = '"cookies", "storage"'
+    response.delete_cookie(
+        "admin_token",
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="strict",
+    )
     return response

@@ -68,7 +68,7 @@ export function ServiceAppDetail() {
   const [showDelete, setShowDelete] = useState(false);
   const [showRotate, setShowRotate] = useState(false);
   const [deleteName, setDeleteName] = useState("");
-  const [editForm, setEditForm] = useState({ name: "", is_active: true });
+  const [editForm, setEditForm] = useState({ name: "", is_active: true, allowed_origins: "" });
   const [revealKey, setRevealKey] = useState<string | null>(null);
 
   const { data: app } = useQuery({
@@ -82,6 +82,9 @@ export function ServiceAppDetail() {
       updateServiceApp(id!, {
         name: editForm.name || undefined,
         is_active: editForm.is_active,
+        allowed_origins: editForm.allowed_origins
+          ? editForm.allowed_origins.split("\n").map((s) => s.trim()).filter(Boolean)
+          : [],
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["service-app", id] });
@@ -117,7 +120,11 @@ export function ServiceAppDetail() {
 
   const openEdit = () => {
     if (app) {
-      setEditForm({ name: app.name, is_active: app.is_active });
+      setEditForm({
+        name: app.name,
+        is_active: app.is_active,
+        allowed_origins: (app.allowed_origins || []).join("\n"),
+      });
     }
     setShowEdit(true);
   };
@@ -153,6 +160,16 @@ export function ServiceAppDetail() {
               <div className="text-xs text-zinc-500">
                 Created {new Date(app.created_at).toLocaleDateString()}
               </div>
+              {app.allowed_origins && app.allowed_origins.length > 0 && (
+                <div className="text-xs text-zinc-500">
+                  Origins:{" "}
+                  {app.allowed_origins.map((o: string, i: number) => (
+                    <code key={i} className="text-zinc-400 font-mono">
+                      {o}{i < app.allowed_origins.length - 1 ? ", " : ""}
+                    </code>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2">
@@ -198,6 +215,17 @@ export function ServiceAppDetail() {
               className="rounded border-zinc-600 bg-zinc-800 text-zinc-300"
             />
             <label htmlFor="is_active" className="text-xs text-zinc-400">Active</label>
+          </div>
+          <div>
+            <label className="text-xs text-zinc-500">Allowed Origins</label>
+            <textarea
+              value={editForm.allowed_origins}
+              onChange={(e) => setEditForm((f) => ({ ...f, allowed_origins: e.target.value }))}
+              placeholder={"https://app.example.com\nhttps://staging.example.com"}
+              rows={3}
+              className="mt-1 w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-md text-sm text-zinc-200 font-mono placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-600"
+            />
+            <p className="mt-1 text-xs text-zinc-600">One origin per line. Required for browser-direct authz mode.</p>
           </div>
           {update.isError && (
             <div className="text-xs text-red-400">{(update.error as Error).message}</div>

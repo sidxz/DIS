@@ -45,17 +45,6 @@ plugins:
   - search
   - section-index
   - glightbox
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [sdk/src]
-          options:
-            show_source: true
-            show_root_heading: true
-            show_symbol_type_heading: true
-            members_order: source
-            docstring_style: google
-            merge_init_into_class: true
 
 markdown_extensions:
   - admonition
@@ -88,64 +77,49 @@ nav:
   - Home: index.md
   - Getting Started:
     - getting-started/index.md
-    - Installation: getting-started/installation.md
     - Quickstart: getting-started/quickstart.md
     - Configuration: getting-started/configuration.md
   - Guide:
-    - guide/index.md
-    - Tutorial: guide/tutorial.md
-    - "Tutorial: Next.js Frontend": guide/tutorial-nextjs.md
-    - Architecture: guide/architecture.md
+    - How It Works: guide/how-it-works.md
     - Authentication: guide/authentication.md
-    - JWT Tokens: guide/jwt.md
+    - Authorization: guide/authorization.md
     - Workspaces: guide/workspaces.md
     - Groups: guide/groups.md
-    - Permissions: guide/permissions.md
-    - Roles: guide/roles.md
-    - Service Auth: guide/service-auth.md
-    - Admin Panel: guide/admin.md
+    - Roles (RBAC): guide/roles.md
+    - Permissions (ACLs): guide/permissions.md
+    - Service Apps: guide/service-apps.md
+    - Admin Panel: guide/admin-panel.md
+  - Tutorials:
+    - React + FastAPI: tutorial/react.md
+    - Next.js: tutorial/nextjs.md
+    - Proxy Mode: tutorial/proxy-mode.md
   - Python SDK:
     - sdk/index.md
-    - Installation: sdk/installation.md
+    - Sentinel Class: sdk/sentinel-class.md
     - Middleware: sdk/middleware.md
     - Dependencies: sdk/dependencies.md
-    - Permission Client: sdk/permission-client.md
-    - Role Client: sdk/role-client.md
-    - Autoconfig: sdk/autoconfig.md
-    - Integration Guide: sdk/integration.md
-    - Examples: sdk/examples.md
+    - Permissions: sdk/permissions.md
+    - Roles: sdk/roles.md
+    - DDD / Clean Architecture: sdk/ddd.md
   - JS/TS SDK:
     - js-sdk/index.md
-    - Installation: js-sdk/installation.md
-    - Auth Client: js-sdk/auth-client.md
-    - React Integration: js-sdk/react.md
-    - Next.js Integration: js-sdk/nextjs.md
+    - AuthZ Client: js-sdk/authz-client.md
+    - React: js-sdk/react.md
+    - Next.js: js-sdk/nextjs.md
     - Server Utilities: js-sdk/server.md
+    - Proxy Client: js-sdk/proxy-client.md
   - API Reference:
     - api/index.md
-    - Auth: api/auth.md
-    - Users: api/users.md
-    - Workspaces: api/workspaces.md
-    - Groups: api/groups.md
+    - Authentication: api/auth.md
+    - Resources: api/resources.md
     - Permissions: api/permissions.md
     - Roles: api/roles.md
     - Schemas: api/schemas.md
-  - SDK Reference:
-    - reference/index.md
-    - Types: reference/types.md
-    - Middleware: reference/middleware.md
-    - Dependencies: reference/dependencies.md
-    - Permissions: reference/permissions.md
   - Security: security.md
   - Deployment:
     - deployment/index.md
-    - Docker: deployment/docker.md
-    - Production: deployment/production.md
-    - Environment: deployment/environment.md
+    - Environment Variables: deployment/environment.md
   - Contributing:
     - contributing/index.md
-    - Dev Setup: contributing/setup.md
-    - Project Structure: contributing/structure.md
     - Database: contributing/database.md
     - Testing: contributing/testing.md
-    - Code Style: contributing/code-style.md

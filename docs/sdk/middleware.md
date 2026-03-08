@@ -1,284 +1,144 @@
-# JWT Middleware
+# Middleware
 
-The `JWTAuthMiddleware` is a Starlette middleware that validates JWT access tokens on every incoming request and makes the authenticated user available to your route handlers via `request.state.user`.
+The SDK provides two middleware classes. Use `AuthzMiddleware` in authz mode (dual-token) or `JWTAuthMiddleware` in proxy mode (single JWT). If you use the `Sentinel` class, `protect()` adds the correct one automatically.
 
-## Setup
+## AuthzMiddleware (AuthZ Mode)
 
-### Using a PEM public key
+Validates both an IdP token and a Sentinel authorization token on each request. Checks that the `sub` claims match across tokens (binding verification).
+
+### Headers
+
+| Header | Content |
+|--------|---------|
+| `Authorization` | `Bearer <idp_token>` |
+| `X-Authz-Token` | `<sentinel_authz_token>` |
+
+### Setup
 
 ```python
-from pathlib import Path
-
-from fastapi import FastAPI
-from sentinel_auth.middleware import JWTAuthMiddleware
-
-app = FastAPI()
-
-public_key = Path("keys/public.pem").read_text()
+from sentinel_auth.authz_middleware import AuthzMiddleware
 
 app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
+    AuthzMiddleware,
+    idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+    sentinel_public_key=sentinel_pem,
     exclude_paths=["/health", "/docs", "/openapi.json"],
 )
 ```
 
-### Using JWKS auto-discovery (recommended)
+Or pass a `Sentinel` instance (keys are read lazily -- safe to call before lifespan):
 
 ```python
-from fastapi import FastAPI
-from sentinel_auth.middleware import JWTAuthMiddleware
-
-app = FastAPI()
-
 app.add_middleware(
-    JWTAuthMiddleware,
-    jwks_url="https://identity.example.com/.well-known/jwks.json",
-    exclude_paths=["/health", "/docs", "/openapi.json"],
+    AuthzMiddleware,
+    sentinel_instance=sentinel,
 )
 ```
 
-The JWKS URL is fetched lazily on the first request and cached. This avoids the need to distribute PEM files and supports automatic key rotation.
-
-## Parameters
+### Constructor Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `public_key` | `str \| None` | `None` | RSA public key in PEM format. Used to verify RS256 JWT signatures. Obtain this from the identity service's `keys/public.pem`. Either `public_key` or `jwks_url` must be provided. |
-| `jwks_url` | `str \| None` | `None` | URL to a JWKS endpoint for auto-discovery of the signing key. The key is fetched lazily on first request and cached. Either `public_key` or `jwks_url` must be provided. |
-| `audience` | `str` | `"sentinel:access"` | Expected `aud` claim in the JWT. Tokens with a different audience are rejected. |
-| `algorithm` | `str` | `"RS256"` | JWT signing algorithm. Must match the identity service's signing configuration. |
-| `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | List of path prefixes that bypass authentication. Any request whose path starts with one of these strings is passed through without token validation. |
-| `allowed_workspaces` | `set[str] \| None` | `None` | Optional set of workspace IDs permitted to access this service. `None` allows all workspaces. If set, requests with a workspace ID not in the set receive a 403 response. |
+| `idp_public_key` | `str \| None` | `None` | PEM key for IdP token validation |
+| `idp_jwks_url` | `str \| None` | `None` | JWKS endpoint for IdP tokens (handles key rotation) |
+| `sentinel_public_key` | `str \| None` | `None` | PEM key for authz token validation |
+| `sentinel_instance` | `Sentinel \| None` | `None` | Sentinel instance (reads keys lazily) |
+| `idp_algorithm` | `str` | `"RS256"` | IdP token signing algorithm |
+| `sentinel_algorithm` | `str` | `"RS256"` | Authz token signing algorithm |
+| `sentinel_audience` | `str` | `"sentinel:authz"` | Expected `aud` claim in authz token |
+| `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | Paths that bypass authentication |
 
-## How It Works
+Either `sentinel_public_key` or `sentinel_instance` is required. For IdP validation, the middleware uses `idp_jwks_url` or `idp_public_key` (from the params or from the Sentinel instance).
 
-For every incoming request, the middleware performs the following steps:
+### Request State
 
-### 1. Path Exclusion Check
+After successful validation, the middleware sets:
 
-If the request path starts with any prefix in `exclude_paths`, the middleware skips all authentication and passes the request through to the next handler.
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `request.state.user` | `AuthenticatedUser` | User built from authz token claims + IdP email/name |
+| `request.state.token` | `str` | The Sentinel authz token |
+| `request.state.idp_token` | `str` | The original IdP token |
+
+### Validation Steps
+
+1. Extract IdP token from `Authorization: Bearer ...`
+2. Extract authz token from `X-Authz-Token`
+3. Validate IdP token (signature, expiry) via JWKS or static key
+4. Validate authz token (signature, expiry, audience `sentinel:authz`)
+5. Verify binding: IdP `sub` must match authz `idp_sub`
+6. Build `AuthenticatedUser` and set on `request.state`
+
+OPTIONS requests are passed through without validation.
+
+---
+
+## JWTAuthMiddleware (Proxy Mode)
+
+Validates a single Sentinel-issued JWT. Used when Sentinel handles the full OAuth flow.
+
+### Setup
 
 ```python
-# These requests skip authentication entirely:
-# GET /health
-# GET /docs
-# GET /openapi.json
-# GET /docs/oauth2-redirect
+from sentinel_auth.middleware import JWTAuthMiddleware
+
+# Recommended: fetch key from JWKS automatically
+app.add_middleware(
+    JWTAuthMiddleware,
+    base_url="https://sentinel.example.com",
+)
+
+# Alternative: static PEM key
+app.add_middleware(
+    JWTAuthMiddleware,
+    public_key=Path("keys/public.pem").read_text(),
+)
 ```
 
-### 2. Token Extraction
+### Constructor Parameters
 
-The middleware looks for the `Authorization` header with a `Bearer` prefix:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `base_url` | `str \| None` | `None` | Sentinel URL. JWKS endpoint derived as `{base_url}/.well-known/jwks.json` |
+| `public_key` | `str \| None` | `None` | RSA PEM key for air-gapped deployments |
+| `jwks_url` | `str \| None` | `None` | Explicit JWKS URL (non-standard paths only) |
+| `algorithm` | `str` | `"RS256"` | JWT signing algorithm |
+| `audience` | `str` | `"sentinel:access"` | Expected `aud` claim |
+| `exclude_paths` | `list[str] \| None` | `["/health", "/docs", "/openapi.json"]` | Paths that bypass authentication |
+| `allowed_workspaces` | `set[str] \| None` | `None` | Workspace IDs permitted. `None` allows all |
 
+One of `base_url`, `jwks_url`, or `public_key` is required. The JWKS key is fetched lazily on first request and cached.
+
+### Request State
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `request.state.user` | `AuthenticatedUser` | User built from JWT claims |
+| `request.state.token` | `str` | The raw JWT string |
+
+---
+
+## Excluded Paths
+
+Both middleware classes skip authentication for excluded paths. Matching uses exact match or prefix with `/` boundary:
+
+```python
+# Path "/health" matches:     /health, /health/ready
+# Path "/docs" matches:       /docs, /docs/oauth2-redirect
+# Path "/docs" does NOT match: /documents
 ```
-Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
-```
-
-If the header is missing or does not start with `Bearer `, the middleware returns a 401 response immediately.
-
-### 3. JWT Validation
-
-The token is decoded and validated using PyJWT with the provided public key and algorithm. The middleware checks:
-
-- **Signature** -- the token was signed by the identity service's private key
-- **Expiration** -- the `exp` claim has not passed
-- **Audience** -- the `aud` claim matches the expected value (default: `"sentinel:access"`)
-- **Structure** -- the token is a well-formed JWT
-
-!!! note "Audience prevents token misuse"
-    Sentinel issues three token types with distinct audiences: `"sentinel:access"`, `"sentinel:refresh"`, and `"sentinel:admin"`. The middleware rejects any token whose `aud` doesn't match, preventing refresh or admin tokens from being used as access tokens. See [JWT Tokens — Access Token Claims](../guide/jwt.md#access-token-claims) for the full claims reference.
-
-### 4. User Context Population
-
-On successful validation, the middleware extracts claims from the JWT payload and creates an `AuthenticatedUser` instance:
-
-| JWT Claim | AuthenticatedUser Field | Type |
-|-----------|------------------------|------|
-| `sub` | `user_id` | `UUID` |
-| `email` | `email` | `str` |
-| `name` | `name` | `str` |
-| `wid` | `workspace_id` | `UUID` |
-| `wslug` | `workspace_slug` | `str` |
-| `wrole` | `workspace_role` | `str` |
-| `groups` | `groups` | `list[UUID]` |
-
-The `AuthenticatedUser` is set on `request.state.user` and is available to all downstream handlers and dependencies.
 
 ## Error Responses
 
-The middleware returns JSON error responses for authentication failures:
+Both middleware classes return JSON errors:
 
-### Missing or Malformed Header
-
-```http
-HTTP/1.1 401 Unauthorized
-Content-Type: application/json
-
-{"detail": "Missing or invalid Authorization header"}
-```
-
-Returned when:
-- The `Authorization` header is absent
-- The header value does not start with `Bearer `
-
-### Expired Token
-
-```http
-HTTP/1.1 401 Unauthorized
-Content-Type: application/json
-
-{"detail": "Token has expired"}
-```
-
-Returned when the JWT's `exp` claim is in the past. The client should use their refresh token to obtain a new access token from the identity service.
-
-### Invalid Token
-
-```http
-HTTP/1.1 401 Unauthorized
-Content-Type: application/json
-
-{"detail": "Invalid token: <reason>"}
-```
-
-Returned when:
-- The signature does not match the public key
-- The token is malformed or cannot be decoded
-- Required claims are missing
-
-### Workspace Not Permitted
-
-```http
-HTTP/1.1 403 Forbidden
-Content-Type: application/json
-
-{"detail": "Workspace not permitted for this service"}
-```
-
-Returned when `allowed_workspaces` is configured and the JWT's workspace ID is not in the permitted set. The token itself is valid, but the service does not serve this workspace.
-
-## Middleware Order
-
-When combining `JWTAuthMiddleware` with other middleware, add it **last** (so it runs first in the request pipeline). FastAPI/Starlette middleware is executed in reverse order of addition:
-
-```python
-from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
-
-# Added last = runs first
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
-    exclude_paths=["/health", "/docs", "/openapi.json"],
-)
-
-# Added second = runs second
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://app.example.com"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Added first = runs last
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["api.example.com"],
-)
-```
-
-Request flow: `TrustedHostMiddleware` -> `CORSMiddleware` -> `JWTAuthMiddleware` -> route handler.
-
-## Customizing Excluded Paths
-
-Override the defaults to include additional paths or restrict the exclusion list:
-
-```python
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
-    exclude_paths=[
-        "/health",
-        "/docs",
-        "/openapi.json",
-        "/webhooks",      # Allow unauthenticated webhook callbacks
-        "/public/",       # Public asset routes
-    ],
-)
-```
-
-Path matching uses `str.startswith()`, so `"/public/"` matches `/public/logo.png`, `/public/styles.css`, etc.
-
-## Restricting by Workspace
-
-If your service should only be accessible to members of specific workspaces, pass the `allowed_workspaces` parameter:
-
-```python
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
-    allowed_workspaces={"a1b2c3d4-...", "e5f6g7h8-..."},
-)
-```
-
-When set, any request with a valid JWT but a workspace ID not in the set receives a `403 Forbidden` response:
-
-```http
-HTTP/1.1 403 Forbidden
-Content-Type: application/json
-
-{"detail": "Workspace not permitted for this service"}
-```
-
-Pass `None` (the default) to allow all workspaces. This is useful for multi-tenant deployments where each service instance is locked to a specific tenant:
-
-```python
-# Read from environment (comma-separated UUIDs)
-allowed = settings.allowed_workspaces  # e.g. ["uuid1", "uuid2"]
-app.add_middleware(
-    JWTAuthMiddleware,
-    public_key=public_key,
-    allowed_workspaces=set(allowed) or None,
-)
-```
-
-## Accessing the User in Route Handlers
-
-After the middleware runs, you can access the user directly from `request.state` or use the SDK's dependency helpers (recommended):
-
-```python
-from fastapi import Depends, Request
-from sentinel_auth.dependencies import get_current_user
-from sentinel_auth.types import AuthenticatedUser
-
-
-# Option 1: Direct access (not recommended)
-@app.get("/me")
-async def me(request: Request):
-    user = request.state.user
-    return {"email": user.email}
-
-
-# Option 2: Dependency injection (recommended)
-@app.get("/me")
-async def me(user: AuthenticatedUser = Depends(get_current_user)):
-    return {"email": user.email}
-```
-
-The dependency approach is preferred because it provides type safety, automatic 401 responses if the user is missing, and cleaner function signatures.
-
-## HTTPS in Production
-
-The Python SDK logs a warning if the `JWTAuthMiddleware`, `PermissionClient`, or `RoleClient` is configured with a plain `http://` URL pointing to a non-localhost host. This is a reminder, not a hard error — but **all production traffic to Sentinel must use HTTPS** to protect tokens and credentials in transit.
-
-!!! warning "Insecure connection warning"
-    ```
-    WARNING sentinel_auth - Sentinel SDK (JWTAuthMiddleware) is connecting over plain
-    HTTP to identity.example.com. Use HTTPS in production to protect tokens and credentials.
-    ```
-
-## Next Steps
-
-- [Dependencies](dependencies.md) -- use `get_current_user`, `require_role`, and other helpers
-- [Permission Client](permission-client.md) -- add entity-level access control
+| Status | Detail | When |
+|--------|--------|------|
+| 401 | `Missing IdP token` / `Missing or invalid Authorization header` | No `Authorization: Bearer` header |
+| 401 | `Missing authz token` | No `X-Authz-Token` header (authz mode only) |
+| 401 | `IdP token expired` / `Token has expired` | Token `exp` in the past |
+| 401 | `Invalid IdP token` / `Invalid token` | Bad signature, malformed, wrong audience |
+| 401 | `Token binding mismatch: idp_sub does not match` | IdP sub != authz idp_sub (authz mode) |
+| 401 | `Invalid token claims` | Missing required claims in payload |
+| 403 | `Workspace not permitted for this service` | Workspace not in `allowed_workspaces` |
+| 500 | `Authentication service unavailable` | JWKS fetch failed (proxy mode) |

@@ -1,126 +1,60 @@
 # JavaScript / TypeScript SDK
 
-The **Sentinel Auth JS SDK** is a family of three npm packages that integrate JavaScript and TypeScript applications with the Sentinel Auth service. It handles PKCE OAuth flows, token management, JWT verification, and permission/role checks so you can focus on your application logic.
+Three npm packages for browser auth, React bindings, and Next.js integration.
 
 ## Packages
 
-| Package | Purpose | Runtime |
-|---------|---------|---------|
-| `@sentinel-auth/js` | Core auth client + server utilities | Browser, Node.js, Edge |
-| `@sentinel-auth/react` | React provider, hooks, components | Browser (React 18+) |
-| `@sentinel-auth/nextjs` | Next.js Edge Middleware + server helpers | Next.js 14+ |
+```bash
+# Core — browser client + server utilities
+npm install @sentinel-auth/js
 
-## What the SDK Provides
+# React — provider, hooks, components
+npm install @sentinel-auth/react
 
-### Browser Auth Client
+# Next.js — Edge Middleware, server helpers, client re-exports
+npm install @sentinel-auth/nextjs
+```
 
-`SentinelAuth` is the core browser class that encapsulates the full OAuth2 + PKCE + workspace-selection flow:
+## Which package do I need?
 
-- **PKCE login** -- generates code verifier/challenge, redirects to OAuth provider
-- **Workspace selection** -- fetches available workspaces, completes token exchange
-- **Token management** -- stores tokens, auto-refreshes before expiry
-- **Auth-aware fetch** -- injects `Authorization: Bearer` header, retries on 401
+| I'm building...                    | Install                                      |
+|------------------------------------|----------------------------------------------|
+| React SPA (Vite, CRA)             | `@sentinel-auth/js` + `@sentinel-auth/react` |
+| Next.js app                        | `@sentinel-auth/js` + `@sentinel-auth/nextjs` |
+| Node.js / Express API              | `@sentinel-auth/js` (server entry point)     |
+| Vanilla JS / any framework         | `@sentinel-auth/js`                          |
 
-### React Bindings
+## Two modes
 
-Provider, hooks, and components for React applications:
+**AuthZ mode** (recommended) -- your app handles IdP sign-in directly (Google, EntraID). Sentinel issues short-lived authorization tokens. Uses `SentinelAuthz`, `AuthzProvider`.
 
-- **`SentinelAuthProvider`** -- React context provider wrapping `SentinelAuth`
-- **`useAuth`** -- full auth context (login, logout, fetch, user)
-- **`useUser`** -- current authenticated user (throws if not authenticated)
-- **`useHasRole`** -- workspace role hierarchy check
-- **`AuthGuard`** -- conditional rendering based on auth state
-- **`AuthCallback`** -- OAuth callback route handler with workspace selection
+**Proxy mode** -- Sentinel manages the full OAuth2 + PKCE redirect flow. Uses `SentinelAuth`, `SentinelAuthProvider`.
 
-### Server Utilities
+## Quick start (AuthZ mode)
 
-Node.js and Edge-compatible utilities for backend use:
+```tsx
+import { SentinelAuthz, IdpConfigs } from '@sentinel-auth/js'
 
-- **`verifyToken`** -- JWT verification via JWKS (uses `jose`, Edge-compatible)
-- **`PermissionClient`** -- Zanzibar-style permission checks (mirrors the Python SDK)
-- **`RoleClient`** -- RBAC action checks (mirrors the Python SDK)
+const authz = new SentinelAuthz({
+  sentinelUrl: 'http://localhost:9003',
+  idps: { google: IdpConfigs.google('your-google-client-id') },
+})
 
-### Next.js Integration
+// Login redirects to Google
+authz.login('google')
 
-Edge Middleware and server helpers for Next.js applications:
+// After callback, resolve + select workspace
+const result = await authz.resolve(idpToken, 'google')
+await authz.selectWorkspace(idpToken, 'google', result.workspaces![0].id)
 
-- **`createSentinelMiddleware`** -- Edge Middleware for JWT validation with JWKS
-- **`getUser` / `requireUser`** -- read user from middleware-set headers in Server Components
-- **`withAuth`** -- HOC for Route Handlers requiring authentication
+// Authenticated fetch with dual-token headers
+const notes = await authz.fetchJson<Note[]>('/api/notes')
+```
 
-## Quick Start
+## Sections
 
-=== "React"
-
-    ```bash
-    npm install @sentinel-auth/js @sentinel-auth/react
-    ```
-
-    ```tsx
-    import { SentinelAuthProvider, AuthGuard, useAuth } from '@sentinel-auth/react'
-
-    function App() {
-      return (
-        <SentinelAuthProvider config={{ sentinelUrl: 'http://localhost:9003' }}>
-          <AuthGuard fallback={<LoginPage />}>
-            <Dashboard />
-          </AuthGuard>
-        </SentinelAuthProvider>
-      )
-    }
-
-    function LoginPage() {
-      const { login } = useAuth()
-      return <button onClick={() => login('google')}>Sign in</button>
-    }
-    ```
-
-=== "Next.js"
-
-    ```bash
-    npm install @sentinel-auth/js @sentinel-auth/react @sentinel-auth/nextjs
-    ```
-
-    ```typescript
-    // middleware.ts
-    import { createSentinelMiddleware } from '@sentinel-auth/nextjs/middleware'
-
-    export default createSentinelMiddleware({
-      jwksUrl: 'http://localhost:9003/.well-known/jwks.json',
-      publicPaths: ['/login', '/auth/callback'],
-    })
-
-    export const config = { matcher: ['/((?!_next|favicon.ico).*)'] }
-    ```
-
-=== "Node.js Server"
-
-    ```bash
-    npm install @sentinel-auth/js
-    ```
-
-    ```typescript
-    import { verifyToken, PermissionClient } from '@sentinel-auth/js/server'
-
-    const permissions = new PermissionClient(
-      'http://localhost:9003',
-      'my-service',
-      'sk_my_service_key',
-    )
-
-    // Verify a JWT from a request
-    const payload = await verifyToken(token, {
-      jwksUrl: 'http://localhost:9003/.well-known/jwks.json',
-    })
-
-    // Check permissions
-    const canView = await permissions.can(token, 'document', docId, 'view')
-    ```
-
-## Next Steps
-
-- [Installation](installation.md) -- install the packages
-- [Auth Client](auth-client.md) -- configure the browser auth client
-- [React Integration](react.md) -- provider, hooks, and components
-- [Next.js Integration](nextjs.md) -- Edge Middleware and server helpers
-- [Server Utilities](server.md) -- JWT verification, permission and role clients
+- [AuthZ Client](authz-client.md) -- browser auth for authz mode (recommended)
+- [Proxy Client](proxy-client.md) -- browser auth for proxy mode
+- [React Integration](react.md) -- provider, hooks, guard, callback
+- [Next.js Integration](nextjs.md) -- Edge Middleware + server helpers
+- [Server Utilities](server.md) -- JWT verification, permissions, RBAC

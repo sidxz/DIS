@@ -30,6 +30,7 @@ def get_public_key() -> str:
 _AUD_ACCESS = "sentinel:access"
 _AUD_ADMIN = "sentinel:admin"
 _AUD_REFRESH = "sentinel:refresh"
+_AUD_AUTHZ = "sentinel:authz"
 _ISSUER = settings.base_url
 
 
@@ -93,15 +94,62 @@ def create_refresh_token(user_id: uuid.UUID, family_id: str | None = None) -> st
     return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
 
 
-def decode_token(token: str, audience: str | None = None) -> dict:
+def create_authz_token(
+    user_id: uuid.UUID,
+    idp_sub: str,
+    workspace_id: uuid.UUID,
+    workspace_slug: str,
+    workspace_role: str,
+    actions: list[str],
+    service_name: str,
+) -> str:
+    """Create a short-lived authorization-only JWT.
+
+    This token carries workspace role and RBAC actions but NOT identity.
+    Identity is proven by the IdP token (validated separately).
+    The idp_sub claim binds this token to a specific IdP identity.
+    The svc claim binds the token to a specific service (prevents cross-service replay).
+    """
+    now = datetime.now(UTC)
+    payload = {
+        "iss": _ISSUER,
+        "sub": str(user_id),
+        "jti": str(uuid.uuid4()),  # Security: jti enables revocation via denylist
+        "idp_sub": idp_sub,
+        "svc": service_name,
+        "wid": str(workspace_id),
+        "wslug": workspace_slug,
+        "wrole": workspace_role,
+        "actions": actions,
+        "aud": _AUD_AUTHZ,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.authz_token_expire_minutes),
+        "type": "authz",
+    }
+    return jwt.encode(payload, _get_private_key(), algorithm=settings.jwt_algorithm)
+
+
+def decode_token(token: str, audience: str | list[str]) -> dict:
     """Decode and validate a JWT.
 
-    If audience is provided, the token's aud claim must match.
+    Audience is required — callers must explicitly declare expected audience.
+    Decode algorithm is hardcoded to RS256 to prevent algorithm confusion attacks.
     """
     return jwt.decode(
         token,
         _get_public_key(),
-        algorithms=[settings.jwt_algorithm],
+        algorithms=["RS256"],  # Security: hardcode to prevent algorithm substitution
         audience=audience,
         issuer=_ISSUER,
     )
+
+
+def _assert_algorithm() -> None:
+    """Startup assertion: encoding algorithm must be RS256."""
+    if settings.jwt_algorithm != "RS256":
+        raise RuntimeError(
+            f"jwt_algorithm must be RS256, got {settings.jwt_algorithm!r}"
+        )
+
+
+_assert_algorithm()

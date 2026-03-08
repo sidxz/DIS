@@ -14,7 +14,9 @@ keys/
 .env*
 !.env.dev.example
 !.env.prod.example
-!demo/backend/.env.example
+!demo-proxy/backend/.env.example
+!demo-authz/backend/.env.example
+!demo-authz/frontend/.env.example
 
 # Node
 node_modules/
@@ -31,3 +33,6 @@ htmlcov/
 site/
 
 local-docs/
+
+CLAUDE.md
+.serena/

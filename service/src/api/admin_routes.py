@@ -816,6 +816,31 @@ async def share_permission(
     admin: dict = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate grantee belongs to the same workspace as the resource
+    perm = await permission_service.get_permission_by_id(db, permission_id)
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    if body.grantee_type == "user":
+        from src.models.workspace import WorkspaceMembership
+
+        stmt = select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == perm.workspace_id,
+            WorkspaceMembership.user_id == body.grantee_id,
+        )
+        result = await db.execute(stmt)
+        if not result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=400,
+                detail="Grantee user is not a member of the resource's workspace",
+            )
+    elif body.grantee_type == "group":
+        grp = await db.get(Group, body.grantee_id)
+        if not grp or grp.workspace_id != perm.workspace_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Grantee group does not belong to the resource's workspace",
+            )
+
     actor_id = uuid.UUID(admin["sub"])
     try:
         await permission_service.share_resource(
@@ -1056,9 +1081,23 @@ async def assign_role_member(
     db: AsyncSession = Depends(get_db),
 ):
     try:
+        # Fetch role to obtain its workspace_id for cross-workspace isolation check
+        from src.models.role import Role
+
+        role = await db.get(Role, role_id)
+        if not role:
+            raise HTTPException(status_code=404, detail="Role not found")
         await role_service.assign_user_role(
-            db, user_id, role_id, assigned_by=uuid.UUID(admin["sub"])
+            db,
+            user_id,
+            role_id,
+            assigned_by=uuid.UUID(admin["sub"]),
+            workspace_id=role.workspace_id,
         )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error("assign_user_role failed", error=str(e), exc_info=True)
         raise HTTPException(status_code=400, detail="Failed to assign role")
@@ -1219,7 +1258,11 @@ async def create_service_app(
     actor_id = uuid.UUID(admin["sub"])
     try:
         app, plaintext_key = await service_app_service.create_service_app(
-            db, name=body.name, service_name=body.service_name, created_by=actor_id
+            db,
+            name=body.name,
+            service_name=body.service_name,
+            created_by=actor_id,
+            allowed_origins=body.allowed_origins,
         )
     except Exception as e:
         logger.error("create_service_app failed", error=str(e), exc_info=True)
@@ -1241,6 +1284,7 @@ async def create_service_app(
         service_name=app.service_name,
         key_prefix=app.key_prefix,
         is_active=app.is_active,
+        allowed_origins=app.allowed_origins,
         last_used_at=app.last_used_at,
         created_by=app.created_by,
         created_at=app.created_at,
@@ -1269,7 +1313,11 @@ async def update_service_app(
 ):
     try:
         app = await service_app_service.update_service_app(
-            db, app_id, name=body.name, is_active=body.is_active
+            db,
+            app_id,
+            name=body.name,
+            is_active=body.is_active,
+            allowed_origins=body.allowed_origins,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1284,6 +1332,7 @@ async def update_service_app(
     )
     await db.commit()
     await db.refresh(app)
+    await refresh_origins(db)
     return app
 
 
@@ -1318,6 +1367,7 @@ async def rotate_service_app_key(
         service_name=app.service_name,
         key_prefix=app.key_prefix,
         is_active=app.is_active,
+        allowed_origins=app.allowed_origins,
         last_used_at=app.last_used_at,
         created_by=app.created_by,
         created_at=app.created_at,
@@ -1345,6 +1395,7 @@ async def delete_service_app(
     )
     await service_app_service.delete_service_app(db, app_id)
     await db.commit()
+    await refresh_origins(db)
 
 
 # ── CSV Import ────────────────────────────────────────────────────────

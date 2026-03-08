@@ -8,6 +8,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
+from src.api.authz_routes import router as authz_router
 from src.api.group_routes import router as group_router
 from src.api.permission_routes import router as permission_router
 from src.api.role_routes import router as role_router
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     _redis_down = False
     _redis_no_auth = False
     _redis_no_tls = False
+    _redis_no_cert_verify = False
     try:
         from src.services.token_service import get_redis
 
@@ -85,6 +87,8 @@ async def lifespan(app: FastAPI):
             _redis_no_auth = True
         if not settings.redis_url.startswith("rediss://"):
             _redis_no_tls = True
+        elif settings.redis_tls_verify != "required":
+            _redis_no_cert_verify = True
     except Exception:
         _redis_down = True
 
@@ -109,6 +113,10 @@ async def lifespan(app: FastAPI):
         if _redis_no_tls:
             logger.warning(
                 "Redis URL is not using TLS — use rediss:// if Redis is outside a trusted network"
+            )
+        if _redis_no_cert_verify:
+            logger.warning(
+                "Redis TLS certificate verification is disabled — set REDIS_TLS_VERIFY=required in production"
             )
         if "*" in settings.allowed_hosts_list:
             errors.append(
@@ -164,8 +172,10 @@ app = FastAPI(
 # Reject oversized request bodies (10 MB)
 app.add_middleware(MaxBodySizeMiddleware, max_bytes=10_485_760)
 
-# Global rate limiting (30 req/min per IP, all endpoints)
-app.add_middleware(GlobalRateLimitMiddleware, requests_per_minute=30)
+# Global rate limiting (configurable via RATE_LIMIT_RPM, default 30 req/min per IP)
+app.add_middleware(
+    GlobalRateLimitMiddleware, requests_per_minute=settings.rate_limit_rpm
+)
 
 # Security headers on every response
 app.add_middleware(SecurityHeadersMiddleware, hsts=settings.cookie_secure)
@@ -196,6 +206,7 @@ app.include_router(workspace_router)
 app.include_router(group_router)
 app.include_router(permission_router)
 app.include_router(role_router)
+app.include_router(authz_router)
 
 
 @app.get("/health")

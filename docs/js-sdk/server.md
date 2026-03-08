@@ -1,225 +1,128 @@
 # Server Utilities
 
-The `@sentinel-auth/js/server` entry point provides Node.js and Edge-compatible utilities for JWT verification, Zanzibar-style permission checks, and RBAC action checks. These mirror the Python SDK's server-side clients.
+`@sentinel-auth/js/server` provides JWT verification, permission checks, and RBAC action checks for Node.js and Edge runtimes.
 
 ```typescript
-import { verifyToken, PermissionClient, RoleClient } from '@sentinel-auth/js/server'
+import { verifyToken, payloadToUser, PermissionClient, RoleClient } from '@sentinel-auth/js/server'
 ```
 
-## JWT Verification
+## verifyToken
 
-Verify Sentinel JWTs using JWKS (JSON Web Key Set). Uses the `jose` library, which works in Node.js, Edge runtimes, and Cloudflare Workers.
-
-### `verifyToken`
+Verify a Sentinel JWT against a JWKS endpoint. Uses `jose` (Edge-compatible).
 
 ```typescript
-import { verifyToken, payloadToUser } from '@sentinel-auth/js/server'
-
 const payload = await verifyToken(token, {
   jwksUrl: 'http://localhost:9003/.well-known/jwks.json',
 })
-
-// Map JWT claims to a SentinelUser object
-const user = payloadToUser(payload)
-```
-
-### Options
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `jwksUrl` | `string` | *required* | URL to the Sentinel JWKS endpoint |
-| `audience` | `string` | `"sentinel:access"` | Expected `aud` claim |
-| `issuer` | `string` | — | Expected `iss` claim |
-
-JWKS keys are fetched and cached automatically by `jose`. The first call may be slower due to the key fetch; subsequent calls use the cached key set.
-
-### `payloadToUser`
-
-Maps the verified JWT payload to a `SentinelUser` object:
-
-```typescript
 const user = payloadToUser(payload)
 // { userId, email, name, workspaceId, workspaceSlug, workspaceRole, groups }
 ```
 
-JWT claim mapping:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `jwksUrl` | `string` | required | Sentinel JWKS endpoint |
+| `audience` | `string` | `"sentinel:access"` | Expected `aud` claim |
+| `issuer` | `string` | -- | Expected `iss` claim |
 
-| JWT Claim | User Field |
-|-----------|------------|
-| `sub` | `userId` |
-| `email` | `email` |
-| `name` | `name` |
-| `wid` | `workspaceId` |
-| `wslug` | `workspaceSlug` |
-| `wrole` | `workspaceRole` |
-| `groups` | `groups` |
+JWKS keys are fetched and cached automatically.
 
----
+## PermissionClient
 
-## Permission Client
-
-Server-side client for the Sentinel Zanzibar-style permission API. Mirrors the Python SDK's `PermissionClient`.
-
-### Setup
+Zanzibar-style permission checks. Mirrors the Python SDK.
 
 ```typescript
-import { PermissionClient } from '@sentinel-auth/js/server'
-
 const permissions = new PermissionClient(
-  'http://localhost:9003',   // Sentinel base URL
-  'my-service',              // Your service name
-  'sk_my_service_key',       // Service API key (optional)
+  'http://localhost:9003', 'my-service', 'sk_my_service_key',
 )
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `baseUrl` | `string` | Yes | Base URL of the Sentinel service |
-| `serviceName` | `string` | Yes | Your service's registered name |
-| `serviceKey` | `string` | No | Service API key for `X-Service-Key` header |
-
-### `can`
-
-Check a single permission. Returns `true` or `false`.
+**can(token, resourceType, resourceId, action)** -- single permission check.
 
 ```typescript
 const allowed = await permissions.can(token, 'document', docId, 'view')
-if (!allowed) throw new Error('Forbidden')
 ```
 
-### `check`
-
-Batch check multiple permissions in a single request.
+**check(token, checks)** -- batch check.
 
 ```typescript
 const results = await permissions.check(token, [
   { service_name: 'my-service', resource_type: 'document', resource_id: docId, action: 'view' },
   { service_name: 'my-service', resource_type: 'document', resource_id: docId, action: 'edit' },
 ])
-// [{ ...check, allowed: true }, { ...check, allowed: false }]
 ```
 
-### `registerResource`
-
-Register a new resource with the permission system. Requires a service key.
+**registerResource(request)** -- register a resource (service key, no JWT needed).
 
 ```typescript
 await permissions.registerResource({
-  service_name: 'my-service',
-  resource_type: 'document',
-  resource_id: docId,
-  workspace_id: workspaceId,
-  owner_id: userId,
-  visibility: 'workspace',  // 'private' | 'workspace' | 'public'
+  service_name: 'my-service', resource_type: 'document', resource_id: docId,
+  workspace_id: workspaceId, owner_id: userId, visibility: 'workspace',
 })
 ```
 
-### `share`
-
-Share a resource with a user or group.
+**share(token, resourceType, resourceId, share)** -- grant access.
 
 ```typescript
 await permissions.share(token, 'document', docId, {
-  grantee_type: 'user',    // 'user' | 'group'
-  grantee_id: targetUserId,
-  permission: 'edit',       // 'view' | 'edit' | 'manage'
+  grantee_type: 'user', grantee_id: targetUserId, permission: 'edit',
 })
 ```
 
-### `accessible`
-
-List resource IDs the current user can access.
+**accessible(token, resourceType, action, workspaceId, limit?)** -- list accessible resource IDs.
 
 ```typescript
-const result = await permissions.accessible(
-  token,
-  'document',    // resource type
-  'view',        // action
-  workspaceId,
-  100,           // limit (optional)
-)
+const result = await permissions.accessible(token, 'document', 'view', workspaceId)
 // { resource_ids: ['doc1', 'doc2'], has_full_access: false }
 ```
 
----
+## RoleClient
 
-## Role Client
-
-Server-side client for the Sentinel RBAC role/action API. Mirrors the Python SDK's `RoleClient`.
-
-### Setup
+RBAC action checks. Mirrors the Python SDK.
 
 ```typescript
-import { RoleClient } from '@sentinel-auth/js/server'
-
 const roles = new RoleClient(
-  'http://localhost:9003',   // Sentinel base URL
-  'my-service',              // Your service name
-  'sk_my_service_key',       // Service API key (optional)
+  'http://localhost:9003', 'my-service', 'sk_my_service_key',
 )
 ```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `baseUrl` | `string` | Yes | Base URL of the Sentinel service |
-| `serviceName` | `string` | Yes | Your service's registered name |
-| `serviceKey` | `string` | No | Service API key for `X-Service-Key` header |
-
-### `registerActions`
-
-Register actions for your service. Typically called at application startup.
+**registerActions(actions)** -- register at startup (service key).
 
 ```typescript
 await roles.registerActions([
-  { action: 'notes:create', description: 'Create new notes' },
-  { action: 'notes:export', description: 'Export notes to PDF' },
-  { action: 'reports:view', description: 'View analytics reports' },
+  { action: 'notes:create', description: 'Create notes' },
+  { action: 'notes:export', description: 'Export notes' },
 ])
 ```
 
-### `checkAction`
-
-Check if a user can perform an action in a workspace.
+**checkAction(token, action, workspaceId)** -- check single action.
 
 ```typescript
 const allowed = await roles.checkAction(token, 'notes:export', workspaceId)
-if (!allowed) throw new Error('Forbidden')
 ```
 
-### `getUserActions`
-
-List all actions the user can perform in a workspace.
+**getUserActions(token, workspaceId)** -- list permitted actions.
 
 ```typescript
 const actions = await roles.getUserActions(token, workspaceId)
-// ['notes:create', 'notes:export', 'reports:view']
+// ['notes:create', 'notes:export']
 ```
 
----
-
-## Express Example
+## Express example
 
 ```typescript
 import express from 'express'
 import { verifyToken, payloadToUser, PermissionClient } from '@sentinel-auth/js/server'
 
 const app = express()
-const permissions = new PermissionClient(
-  'http://localhost:9003',
-  'my-service',
-  process.env.SERVICE_KEY,
-)
+const permissions = new PermissionClient('http://localhost:9003', 'my-service', process.env.SERVICE_KEY)
 
-// Auth middleware
 async function authenticate(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return res.status(401).json({ error: 'Unauthorized' })
-
   try {
-    const payload = await verifyToken(token, {
+    req.user = payloadToUser(await verifyToken(token, {
       jwksUrl: 'http://localhost:9003/.well-known/jwks.json',
-    })
-    req.user = payloadToUser(payload)
+    }))
     req.token = token
     next()
   } catch {
@@ -227,18 +130,9 @@ async function authenticate(req, res, next) {
   }
 }
 
-// Permission-protected route
 app.get('/api/documents/:id', authenticate, async (req, res) => {
   const allowed = await permissions.can(req.token, 'document', req.params.id, 'view')
   if (!allowed) return res.status(403).json({ error: 'Forbidden' })
-
-  const doc = await getDocument(req.params.id)
-  res.json(doc)
+  res.json(await getDocument(req.params.id))
 })
 ```
-
-## Next Steps
-
-- [Auth Client](auth-client.md) -- browser-side auth client
-- [React Integration](react.md) -- React provider and hooks
-- [Next.js Integration](nextjs.md) -- Edge Middleware and server helpers

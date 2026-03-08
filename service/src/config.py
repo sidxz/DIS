@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     admin_token_expire_minutes: int = 60
+    authz_token_expire_minutes: int = 5
 
     # OAuth2 providers
     google_client_id: str = ""
@@ -52,6 +53,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False  # Set True in production (requires HTTPS)
     allowed_hosts: str = ""  # comma-separated override; empty = derived from BASE_URL
     debug: bool = False  # Set True for local development (enables /docs, /redoc)
+    rate_limit_rpm: int = 30  # Global rate limit (requests per minute per IP)
     behind_proxy: bool = (
         False  # Set True when behind a reverse proxy (nginx, ALB, etc.)
     )

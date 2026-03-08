@@ -10,7 +10,7 @@ from src.models.group import Group
 from src.models.permission import ResourcePermission, ResourceShare
 from src.models.user import User
 from src.models.workspace import Workspace, WorkspaceMembership
-from src.schemas.validators import escape_like, strip_html
+from src.schemas.validators import strip_html
 from src.services import activity_service, token_service
 
 
@@ -87,17 +87,17 @@ async def list_users(
     )
 
     if search:
-        safe = escape_like(search)
         base_query = base_query.where(
-            User.email.ilike(f"%{safe}%") | User.name.ilike(f"%{safe}%")
+            User.email.icontains(search, autoescape=True)
+            | User.name.icontains(search, autoescape=True)
         )
 
     # Count total
     count_query = select(func.count()).select_from(User)
     if search:
-        safe = escape_like(search)
         count_query = count_query.where(
-            User.email.ilike(f"%{safe}%") | User.name.ilike(f"%{safe}%")
+            User.email.icontains(search, autoescape=True)
+            | User.name.icontains(search, autoescape=True)
         )
     total = await db.scalar(count_query) or 0
 
@@ -189,12 +189,17 @@ async def update_user(
     if not user:
         return None
     revoke = False
+    deactivated = False
+    activated = False
     if name is not None:
         user.name = name
     if is_active is not None and is_active != user.is_active:
         user.is_active = is_active
         if not is_active:
             revoke = True
+            deactivated = True
+        else:
+            activated = True
     if is_admin is not None and is_admin != user.is_admin:
         user.is_admin = is_admin
         if not is_admin:
@@ -202,6 +207,10 @@ async def update_user(
     await db.commit()
     if revoke:
         await token_service.revoke_all_user_tokens(str(user_id))
+    if deactivated:
+        await token_service.mark_user_deactivated(str(user_id))
+    elif activated:
+        await token_service.mark_user_activated(str(user_id))
     return user
 
 
@@ -220,16 +229,16 @@ async def list_workspaces(
     )
 
     if search:
-        safe = escape_like(search)
         base_query = base_query.where(
-            Workspace.name.ilike(f"%{safe}%") | Workspace.slug.ilike(f"%{safe}%")
+            Workspace.name.icontains(search, autoescape=True)
+            | Workspace.slug.icontains(search, autoescape=True)
         )
 
     count_query = select(func.count()).select_from(Workspace)
     if search:
-        safe = escape_like(search)
         count_query = count_query.where(
-            Workspace.name.ilike(f"%{safe}%") | Workspace.slug.ilike(f"%{safe}%")
+            Workspace.name.icontains(search, autoescape=True)
+            | Workspace.slug.icontains(search, autoescape=True)
         )
     total = await db.scalar(count_query) or 0
 
@@ -330,12 +339,12 @@ async def list_permissions(
         filters.append(ResourcePermission.service_name == service_name)
     if resource_id:
         filters.append(
-            cast(ResourcePermission.resource_id, Text).ilike(
-                f"{escape_like(resource_id)}%"
+            cast(ResourcePermission.resource_id, Text).istartswith(
+                resource_id, autoescape=True
             )
         )
     if owner:
-        filters.append(User.email.ilike(f"%{escape_like(owner)}%"))
+        filters.append(User.email.icontains(owner, autoescape=True))
 
     for f in filters:
         base_query = base_query.where(f)
@@ -456,10 +465,15 @@ async def bulk_update_status(
         update(User).where(User.id.in_(user_ids)).values(is_active=is_active)
     )
     await db.commit()
-    # Revoke tokens for deactivated users so access is cut immediately
     if not is_active:
+        # Revoke tokens and mark deactivated so access is cut immediately
         for uid in user_ids:
             await token_service.revoke_all_user_tokens(str(uid))
+            await token_service.mark_user_deactivated(str(uid))
+    else:
+        # Clear deactivation flags for reactivated users
+        for uid in user_ids:
+            await token_service.mark_user_activated(str(uid))
     return result.rowcount  # type: ignore[return-value]
 
 

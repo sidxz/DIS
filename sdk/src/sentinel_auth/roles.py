@@ -18,6 +18,9 @@ class RoleClient:
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=5.0)
         warn_if_insecure(self.base_url, "RoleClient")
 
+    def __repr__(self) -> str:
+        return f"RoleClient(base_url={self.base_url!r}, service_name={self.service_name!r})"
+
     def _headers(self, token: str | None = None) -> dict[str, str]:
         """Build request headers with service key and optional user JWT."""
         h: dict[str, str] = {}

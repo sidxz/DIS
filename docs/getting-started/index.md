@@ -1,33 +1,78 @@
 # Getting Started
 
-This section walks you through setting up Sentinel Auth from scratch to a running instance with OAuth login.
-
 ## Prerequisites
 
-### Docker (recommended)
+| Tool | Version | Why |
+|------|---------|-----|
+| **Docker** + **Docker Compose** | latest | Runs PostgreSQL 16, Redis 7, and the Sentinel service |
+| **Python** | 3.12+ | FastAPI service and SDK |
+| **uv** | latest | Python package/workspace manager |
+| **Node.js** | 18+ | Admin panel, JS SDKs, frontend apps |
+| **OpenSSL** | any | JWT key and TLS cert generation (handled by `make setup`) |
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Docker** & **Docker Compose** | latest | Runs the Sentinel container, PostgreSQL 16, and Redis 7 |
-| **OpenSSL** | any | Generates RSA key pair for JWT signing |
+You also need **OAuth credentials** from at least one identity provider. Google is the fastest to configure for development.
 
-### From Source (contributors)
+## Three Steps
 
-All of the above, plus:
+### 1. Run Sentinel
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| **Python** | 3.12+ | Runtime for the FastAPI service and SDK |
-| **uv** | latest | Python package manager and workspace tool |
-| **Node.js** | 18+ | Admin panel and demo frontend |
+Clone the repository and run the one-time setup:
 
-You will also need **OAuth credentials** from at least one identity provider (Google is the easiest to set up) to enable user authentication.
+```bash
+git clone <repo-url> sentinel && cd sentinel
+make setup
+```
 
-!!! note "Client app registration"
-    Before any frontend can authenticate through Sentinel, you must register it as a **client app** with its redirect URI. The [Quickstart](quickstart.md) covers this step.
+`make setup` does all of this in one shot:
 
-## What's Covered
+- Generates an **RSA key pair** for JWT signing (`keys/private.pem`, `keys/public.pem`)
+- Generates **TLS certificates** for Postgres and Redis (`keys/tls/`)
+- Creates `service/.env` (dev) and `.env.prod` with random secrets
+- Installs Python and Node.js dependencies
+- Starts PostgreSQL and Redis containers
 
-- **[Installation](installation.md)** -- Pull the Docker image (or clone the repo for development), generate JWT keys, and start the full stack.
-- **[Quickstart](quickstart.md)** -- Configure an OAuth provider, register client and service apps, and verify everything works end to end.
-- **[Configuration](configuration.md)** -- Complete reference for every environment variable, organized by category.
+After setup completes, add your OAuth credentials and admin email:
+
+```bash
+# Edit service/.env — set at minimum:
+#   GOOGLE_CLIENT_ID=...
+#   GOOGLE_CLIENT_SECRET=...
+#   ADMIN_EMAILS=you@example.com
+```
+
+Start the service and admin panel:
+
+```bash
+make start    # Sentinel on :9003 (auto-migrates the database)
+make admin    # Admin UI on :9004 (separate terminal)
+```
+
+Verify:
+
+```bash
+curl http://localhost:9003/health
+```
+
+### 2. Configure Your IdP
+
+In the [Quickstart](quickstart.md), you will create a Google OAuth client, register your apps in the Sentinel admin panel, and get a service API key.
+
+### 3. Integrate Your App
+
+Install the SDK in your backend and frontend, add a few lines of configuration, and Sentinel handles authentication and authorization. The [Quickstart](quickstart.md) walks through this end to end with working code.
+
+## Production Deployment
+
+For Docker-based production deployment:
+
+```bash
+# make setup already created .env.prod with random passwords
+# Edit it to set your real values:
+vim .env.prod   # BASE_URL, ADMIN_URL, OAuth creds, ADMIN_EMAILS
+
+docker compose -f docker-compose.prod.yml up -d
+```
+
+## Next
+
+Follow the [Quickstart](quickstart.md) to configure Google OAuth, register your apps, and run a working example.

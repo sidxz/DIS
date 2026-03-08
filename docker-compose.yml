@@ -55,13 +55,21 @@ services:
       retries: 5
 
   sentinel:
-    build: ./service
+    build:
+      context: service
     ports:
       - "9003:9003"
     env_file:
-      - .env
+      - service/.env
     environment:
       DEBUG: "true"
+      DATABASE_URL: "postgresql+asyncpg://identity:identity_dev@identity-postgres:5432/identity?ssl=require"
+      REDIS_URL: "rediss://:sentinel_dev@identity-redis:6379/0"
+      REDIS_TLS_CA_CERT: "/keys/tls/ca.crt"
+      ALLOWED_HOSTS: "localhost,sentinel"
+      RATE_LIMIT_RPM: 10000
+    volumes:
+      - ./keys:/keys:ro
     depends_on:
       identity-postgres:
         condition: service_healthy

@@ -52,6 +52,17 @@ export function AuthCallback({
       return
     }
 
+    // Verify OAuth state parameter to prevent CSRF
+    try {
+      client.verifyCallbackState()
+    } catch (e: unknown) {
+      const err = e instanceof Error ? e : new Error('OAuth state verification failed')
+      setError(err)
+      setLoading(false)
+      onError?.(err)
+      return
+    }
+
     getWorkspaces(code)
       .then(async (ws) => {
         if (ws.length === 0) {

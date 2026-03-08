@@ -1,148 +1,113 @@
 ---
 title: Sentinel Auth
-description: Authentication, workspace management, and Zanzibar-style permissions for your applications
+description: Authentication proxy and authorization microservice for your applications
 ---
 
 ![Sentinel Auth](assets/images/splash.png)
 
-# Sentinel Auth
+# Sentinel
 
-**An open source identity service for Python applications.** Sentinel Auth handles OAuth2/OIDC authentication, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
+An authentication proxy and authorization microservice. Sentinel handles OAuth2/OIDC authentication from external IdPs, multi-tenant workspace management, and fine-grained Zanzibar-style permissions so you can focus on your application logic.
 
 Built with **FastAPI**, **SQLAlchemy 2.0** (async), **PostgreSQL 16**, **Redis 7**, and **Authlib**.
 
 ---
 
-## Key Features
-
 <div class="grid cards" markdown>
 
--   :material-shield-lock:{ .lg .middle } **OAuth2 / OIDC Authentication**
+-   :material-shield-lock:{ .lg .middle } **AuthZ Mode (Recommended)**
 
     ---
 
-    Sign in with Google, GitHub, and Microsoft EntraID out of the box. PKCE S256 on supported providers, RS256 JWT tokens with refresh rotation and reuse detection.
+    Your app handles IdP login directly (Google, GitHub, EntraID). Sentinel validates the IdP token and issues an authorization JWT. Dual-token design with `idp_sub` binding.
 
-    [:octicons-arrow-right-24: Authentication guide](guide/authentication.md)
+    [:octicons-arrow-right-24: How it works](guide/how-it-works.md)
 
 -   :material-office-building:{ .lg .middle } **Multi-Tenant Workspaces**
 
     ---
 
-    Isolate users, groups, and resources by workspace. Role-based access control at the workspace level with `owner`, `admin`, `member`, and `viewer` roles embedded in every JWT.
+    Isolate users, groups, and resources by workspace. Role-based access at the workspace level with `owner`, `admin`, `editor`, and `viewer` roles embedded in every JWT.
 
-    [:octicons-arrow-right-24: Workspace management](guide/workspaces.md)
+    [:octicons-arrow-right-24: Workspaces](guide/workspaces.md)
 
 -   :material-lock-check:{ .lg .middle } **Zanzibar-Style Permissions**
 
     ---
 
-    Generic resource permissions with `service_name`, `resource_type`, and `resource_id`. Check access, list accessible resources, and share via ACLs -- all through a simple API.
+    Generic resource permissions with `service_name`, `resource_type`, and `resource_id`. Check access, list accessible resources, and share via ACLs.
 
-    [:octicons-arrow-right-24: Permissions model](guide/permissions.md)
+    [:octicons-arrow-right-24: Permissions](guide/permissions.md)
+
+-   :material-account-group:{ .lg .middle } **Custom RBAC**
+
+    ---
+
+    Define service actions (`notes:export`, `reports:generate`), create roles, assign to users. Check permissions at runtime with a single dependency.
+
+    [:octicons-arrow-right-24: Roles](guide/roles.md)
 
 -   :material-language-python:{ .lg .middle } **Python SDK**
 
     ---
 
-    Install `sentinel-auth-sdk` and integrate in minutes. The SDK handles JWT validation, permission checks, and resource registration with a clean, typed Python API.
+    `pip install sentinel-auth-sdk` and integrate in minutes. Middleware, FastAPI dependencies, permission and role clients with a typed async API.
 
-    [:octicons-arrow-right-24: SDK reference](sdk/index.md)
+    [:octicons-arrow-right-24: Python SDK](sdk/index.md)
 
--   :material-language-typescript:{ .lg .middle } **JavaScript / TypeScript SDK**
+-   :material-language-typescript:{ .lg .middle } **JS / TS SDK**
 
     ---
 
-    Three npm packages for browser, React, and Next.js. PKCE auth flow, token management, auth-aware fetch, React hooks, Edge Middleware, and server-side JWT verification.
+    Three packages for browser, React, and Next.js. Token management, auth-aware fetch, React hooks, Edge Middleware, and server-side JWT verification.
 
     [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
 
--   :material-key-chain:{ .lg .middle } **Service-to-Service Auth**
-
-    ---
-
-    Secure inter-service communication with API keys via the `X-Service-Key` header. Three auth tiers -- user JWT, dual (service key + JWT), and service-key-only -- for flexible access control.
-
-    [:octicons-arrow-right-24: Security model](security.md)
-
--   :material-view-dashboard:{ .lg .middle } **Admin Panel**
-
-    ---
-
-    Built-in admin interface for managing users, workspaces, groups, and permissions. Activity logging, CSV import/export, and a dashboard for operational visibility.
-
-    [:octicons-arrow-right-24: Admin guide](guide/admin.md)
-
 </div>
 
 ---
 
-## Get Started
+## Quick integration
 
-Choose your path based on what you need to do:
+```python
+from sentinel_auth import Sentinel
+
+sentinel = Sentinel(
+    base_url="http://localhost:9003",
+    service_name="my-app",
+    service_key="sk_...",
+    mode="authz",
+    idp_jwks_url="https://www.googleapis.com/oauth2/v3/certs",
+)
+
+app = FastAPI(lifespan=sentinel.lifespan)
+sentinel.protect(app)
+
+@app.get("/projects")
+async def list_projects(user=Depends(sentinel.require_user)):
+    return await get_projects(user.workspace_id)
+```
+
+---
+
+## Get started
 
 <div class="grid cards" markdown>
 
--   :material-puzzle:{ .lg .middle } **I want to integrate the SDK**
+-   :material-rocket-launch:{ .lg .middle } **Quickstart**
 
     ---
 
-    Add authentication and permission checks to your application using the Sentinel Auth SDKs.
+    Run Sentinel, configure an IdP, and connect your first app in 5 minutes.
 
-    **Python** -- `pip install sentinel-auth-sdk` [:octicons-arrow-right-24: Python SDK](sdk/index.md)
+    [:octicons-arrow-right-24: Quickstart](getting-started/quickstart.md)
 
-    **JavaScript / TypeScript** -- `npm install @sentinel-auth/js` [:octicons-arrow-right-24: JS/TS SDK](js-sdk/index.md)
-
--   :material-server:{ .lg .middle } **I want to run the service**
+-   :material-book-open-variant:{ .lg .middle } **Tutorials**
 
     ---
 
-    Deploy Sentinel Auth as your authentication and authorization backend.
+    Build a Team Notes app with all three authorization tiers.
 
-    1. Generate RS256 key pair for JWT signing
-    2. Create `.env` from the template
-    3. `docker compose -f docker-compose.prod.yml up -d`
-    4. Register OAuth2 credentials with your identity providers
-    5. Register client apps and service apps via the admin panel
-
-    [:octicons-arrow-right-24: Getting started](getting-started/index.md)
+    [:octicons-arrow-right-24: React + FastAPI](tutorial/react.md) | [:octicons-arrow-right-24: Next.js](tutorial/nextjs.md)
 
 </div>
-
----
-> **BETA SOFTWARE WARNING**  
-> This software is currently in beta and **not fully production ready**. While functional and actively developed, it may contain bugs, incomplete features, or breaking changes. Use in production environments at your own risk. Contributions and feedback are welcome!
-
-## Architecture at a Glance
-
-Sentinel Auth sits between your frontend applications and your backend microservices:
-
-```
-Frontend App          Sentinel Auth                  Your Microservices
------------           -----------------------          ------------------
-                      +---------------------+
-  Login via    -----> | OAuth2/OIDC (Authlib)|
-  Google/GitHub/      | Session + PKCE       |
-  EntraID             +---------------------+
-                              |
-                      +---------------------+
-  JWT in Auth  <----- | JWT Issuance (RS256) |
-  header              | Access + Refresh     |
-                      +---------------------+
-                              |
-  API calls    -----> +---------------------+          +------------------+
-  with Bearer         | User / Workspace /  | -------> | Permission checks|
-  token               | Group Management    |          | via SDK or API   |
-                      +---------------------+          +------------------+
-                              |
-                      +---------------------+
-                      | Zanzibar Permissions |
-                      | register / check /   |
-                      | share / accessible   |
-                      +---------------------+
-```
-
-**No local passwords.** Users always authenticate through external identity providers. Sentinel Auth manages their identity, workspace membership, group assignments, and fine-grained resource permissions.
-
----
-

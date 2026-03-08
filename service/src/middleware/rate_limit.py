@@ -1,13 +1,22 @@
 """Rate limiting configuration using slowapi (Redis-backed) + global middleware."""
 
+import time
+from collections import defaultdict
+
 import redis.asyncio as aioredis
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from src.config import settings
+
+# Module-level fallback counter for when Redis is unavailable
+_fallback_counts: dict[str, list[float]] = defaultdict(list)
+_FALLBACK_WINDOW = 60  # seconds
+_FALLBACK_LIMIT = 30  # requests per window
+_fallback_request_count = 0
 
 
 def _proxy_aware_key_func(request: Request) -> str:
@@ -15,7 +24,8 @@ def _proxy_aware_key_func(request: Request) -> str:
     if settings.behind_proxy:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[-1].strip()
+            # First IP is the original client per X-Forwarded-For convention
+            return forwarded.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"
@@ -94,6 +104,23 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
                     headers={"Retry-After": str(max(ttl, 1))},
                 )
         except Exception:
-            pass  # Fail open — don't block traffic when Redis is unavailable
+            # In-memory fallback when Redis is unavailable
+            global _fallback_request_count
+            now = time.time()
+            key = ip
+            _fallback_counts[key] = [
+                t for t in _fallback_counts[key] if now - t < _FALLBACK_WINDOW
+            ]
+            if len(_fallback_counts[key]) >= _FALLBACK_LIMIT:
+                return Response(status_code=429, content="Rate limit exceeded")
+            _fallback_counts[key].append(now)
+
+            # Periodic cleanup: prune empty keys every ~100 requests to prevent memory growth
+            _fallback_request_count += 1
+            if _fallback_request_count >= 100:
+                _fallback_request_count = 0
+                empty_keys = [k for k, v in _fallback_counts.items() if not v]
+                for k in empty_keys:
+                    del _fallback_counts[k]
 
         return await call_next(request)

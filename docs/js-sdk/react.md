@@ -1,254 +1,160 @@
 # React Integration
 
-The `@sentinel-auth/react` package provides a React context provider, hooks, and components for integrating Sentinel Auth into React applications.
+`@sentinel-auth/react` provides context providers, hooks, and components for React apps. This page covers authz mode (recommended). For proxy mode, the package also exports `SentinelAuthProvider`, `useAuth`, `AuthGuard`, and `AuthCallback`.
 
-## Setup
+```bash
+npm install @sentinel-auth/js @sentinel-auth/react
+```
 
-Wrap your app with `SentinelAuthProvider`:
+## AuthzProvider
+
+Wrap your app to provide auth context.
 
 ```tsx
-import { SentinelAuthProvider } from '@sentinel-auth/react'
+import { AuthzProvider } from '@sentinel-auth/react'
+import { IdpConfigs } from '@sentinel-auth/js'
 
 function App() {
   return (
-    <SentinelAuthProvider config={{ sentinelUrl: 'http://localhost:9003' }}>
-      <YourApp />
-    </SentinelAuthProvider>
-  )
-}
-```
-
-### Provider Props
-
-| Prop | Type | Description |
-|------|------|-------------|
-| `config` | `SentinelConfig` | Config to create a new `SentinelAuth` instance |
-| `client` | `SentinelAuth` | Pre-created client (takes precedence over `config`) |
-| `children` | `ReactNode` | Child components |
-
-!!! tip "Shared client"
-    If you need access to the `SentinelAuth` instance outside of React (e.g., for API modules), create it yourself and pass it via the `client` prop:
-
-    ```tsx
-    import { SentinelAuth } from '@sentinel-auth/js'
-    import { SentinelAuthProvider } from '@sentinel-auth/react'
-
-    const sentinelClient = new SentinelAuth({
+    <AuthzProvider config={{
       sentinelUrl: 'http://localhost:9003',
-    })
-
-    function App() {
-      return (
-        <SentinelAuthProvider client={sentinelClient}>
-          <YourApp />
-        </SentinelAuthProvider>
-      )
-    }
-    ```
-
-## Hooks
-
-### `useAuth`
-
-Access the full auth context. Throws if used outside `SentinelAuthProvider`.
-
-```tsx
-import { useAuth } from '@sentinel-auth/react'
-
-function MyComponent() {
-  const {
-    user,           // SentinelUser | null
-    isAuthenticated,// boolean
-    isLoading,      // boolean
-    login,          // (provider: string) => Promise<void>
-    logout,         // () => void
-    fetch,          // auth-aware fetch wrapper
-  } = useAuth()
-}
-```
-
-### `useUser`
-
-Get the current authenticated user. Throws if not authenticated -- use inside `AuthGuard` or after checking `isAuthenticated`.
-
-```tsx
-import { useUser } from '@sentinel-auth/react'
-
-function Profile() {
-  const user = useUser()
-  return <p>{user.email} — {user.workspaceRole}</p>
-}
-```
-
-The returned `SentinelUser` has these fields:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `userId` | `string` | User ID (JWT `sub` claim) |
-| `email` | `string` | User email |
-| `name` | `string` | Display name |
-| `workspaceId` | `string` | Current workspace ID |
-| `workspaceSlug` | `string` | Current workspace slug |
-| `workspaceRole` | `WorkspaceRole` | Role in workspace (`owner`, `admin`, `editor`, `viewer`) |
-| `groups` | `string[]` | Group memberships |
-
-### `useHasRole`
-
-Check if the current user has at least the given workspace role. Uses hierarchy: `viewer` < `editor` < `admin` < `owner`.
-
-```tsx
-import { useHasRole } from '@sentinel-auth/react'
-
-function AdminPanel() {
-  const isAdmin = useHasRole('admin')
-  if (!isAdmin) return <p>Access denied</p>
-  return <AdminDashboard />
-}
-```
-
-### `useAuthFetch`
-
-Shortcut to the auth-aware `fetch` wrapper.
-
-```tsx
-import { useAuthFetch } from '@sentinel-auth/react'
-
-function DataLoader() {
-  const authFetch = useAuthFetch()
-
-  async function loadData() {
-    const res = await authFetch('/api/data')
-    return res.json()
-  }
-}
-```
-
-## Components
-
-### `AuthGuard`
-
-Conditionally renders children based on authentication state.
-
-```tsx
-import { AuthGuard } from '@sentinel-auth/react'
-
-function App() {
-  return (
-    <AuthGuard
-      fallback={<LoginPage />}
-      loading={<div>Loading...</div>}
-    >
-      <Dashboard />
-    </AuthGuard>
+      idps: { google: IdpConfigs.google('your-google-client-id') },
+    }}>
+      <YourApp />
+    </AuthzProvider>
   )
 }
 ```
 
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| `children` | `ReactNode` | *required* | Rendered when authenticated |
-| `fallback` | `ReactNode` | *required* | Rendered when not authenticated (e.g., login page) |
-| `loading` | `ReactNode` | `null` | Rendered while checking auth state |
+Pass a pre-created client via the `client` prop when you need the instance outside React.
 
-### `AuthCallback`
+## useAuthz()
 
-OAuth callback route component. Reads `?code=` from the URL, fetches available workspaces, auto-selects if there's only one, and shows a picker if multiple. Router-agnostic.
+Full auth context. Throws if used outside `AuthzProvider`.
 
 ```tsx
-import { AuthCallback } from '@sentinel-auth/react'
-import { useNavigate } from 'react-router-dom'
+const {
+  user,             // SentinelUser | null
+  isAuthenticated,  // boolean
+  isLoading,        // boolean
+  login,            // (provider: string) => void
+  resolve,          // (idpToken, provider) => Promise<AuthzResolveResponse>
+  selectWorkspace,  // (idpToken, provider, wsId) => Promise<void>
+  logout,           // () => void
+  fetch,            // dual-header fetch
+  fetchJson,        // <T>(input, init?) => Promise<T>
+  client,           // SentinelAuthz instance
+} = useAuthz()
+```
 
-function CallbackPage() {
-  const navigate = useNavigate()
+## Other hooks
 
-  return (
-    <AuthCallback
-      onSuccess={() => navigate('/dashboard', { replace: true })}
-      onError={(err) => console.error(err)}
-    />
-  )
-}
+**useAuthzUser()** -- returns `SentinelUser`, throws if not authenticated.
+
+```tsx
+const user = useAuthzUser()
+// { userId, email, name, workspaceId, workspaceSlug, workspaceRole, groups }
+```
+
+**useAuthzHasRole(minimum)** -- checks workspace role hierarchy (`viewer` < `editor` < `admin` < `owner`).
+
+```tsx
+const isAdmin = useAuthzHasRole('admin')
+```
+
+**useAuthzFetch()** -- shortcut to the dual-header fetch wrapper.
+
+## AuthzGuard
+
+Gate content behind authentication.
+
+```tsx
+<AuthzGuard fallback={<LoginPage />} loading={<Spinner />}>
+  <Dashboard />
+</AuthzGuard>
 ```
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| `onSuccess` | `(user: SentinelUser) => void` | *required* | Called after successful authentication |
-| `onError` | `(error: Error) => void` | — | Called on error |
-| `loadingComponent` | `ReactNode` | `"Signing you in..."` | Loading UI |
-| `errorComponent` | `(error: Error) => ReactNode` | Error message `<div>` | Error UI |
-| `workspaceSelector` | `(props) => ReactNode` | Built-in button list | Custom workspace picker |
+| `children` | `ReactNode` | required | Shown when authenticated |
+| `fallback` | `ReactNode` | required | Shown when not authenticated |
+| `loading` | `ReactNode` | `null` | Shown while checking auth state |
 
-#### Custom Workspace Selector
+## AuthzCallback
 
-Override the default workspace picker with your own UI:
+Handles the OAuth callback. Reads `id_token` from the URL hash, resolves workspaces, auto-selects if one, shows picker if multiple.
 
 ```tsx
-<AuthCallback
+<AuthzCallback
   onSuccess={(user) => navigate('/dashboard')}
+  onError={(err) => console.error(err)}
   workspaceSelector={({ workspaces, onSelect, isLoading }) => (
-    <div className="workspace-picker">
-      <h2>Choose a workspace</h2>
+    <ul>
       {workspaces.map((ws) => (
-        <button
-          key={ws.id}
-          onClick={() => onSelect(ws.id)}
-          disabled={isLoading}
-        >
-          {ws.name} ({ws.role})
-        </button>
+        <li key={ws.id}>
+          <button onClick={() => onSelect(ws.id)} disabled={isLoading}>
+            {ws.name} ({ws.role})
+          </button>
+        </li>
       ))}
-    </div>
+    </ul>
   )}
 />
 ```
 
-## Full Example
+| Prop | Type | Description |
+|------|------|-------------|
+| `onSuccess` | `(user: SentinelUser) => void` | Called after auth completes |
+| `onError` | `(error: Error) => void` | Called on error |
+| `loadingComponent` | `ReactNode` | Loading UI |
+| `errorComponent` | `(error: Error) => ReactNode` | Error UI |
+| `workspaceSelector` | `(props) => ReactNode` | Custom workspace picker |
+
+## Complete example
 
 ```tsx
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
-import { SentinelAuthProvider, AuthGuard, AuthCallback, useAuth, useUser } from '@sentinel-auth/react'
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom'
+import { AuthzProvider, AuthzGuard, AuthzCallback, useAuthz, useAuthzUser } from '@sentinel-auth/react'
+import { IdpConfigs } from '@sentinel-auth/js'
 
 function App() {
   return (
-    <SentinelAuthProvider config={{ sentinelUrl: 'http://localhost:9003' }}>
+    <AuthzProvider config={{
+      sentinelUrl: 'http://localhost:9003',
+      idps: { google: IdpConfigs.google(import.meta.env.VITE_GOOGLE_CLIENT_ID) },
+    }}>
       <BrowserRouter>
         <Routes>
           <Route path="/auth/callback" element={<Callback />} />
           <Route path="/*" element={
-            <AuthGuard fallback={<Login />}>
+            <AuthzGuard fallback={<Login />} loading={<p>Loading...</p>}>
               <Dashboard />
-            </AuthGuard>
+            </AuthzGuard>
           } />
         </Routes>
       </BrowserRouter>
-    </SentinelAuthProvider>
+    </AuthzProvider>
   )
 }
 
 function Login() {
-  const { login } = useAuth()
+  const { login } = useAuthz()
   return <button onClick={() => login('google')}>Sign in with Google</button>
 }
 
 function Callback() {
   const navigate = useNavigate()
-  return <AuthCallback onSuccess={() => navigate('/', { replace: true })} />
+  return <AuthzCallback onSuccess={() => navigate('/', { replace: true })} />
 }
 
 function Dashboard() {
-  const user = useUser()
-  const { logout } = useAuth()
+  const user = useAuthzUser()
+  const { logout } = useAuthz()
   return (
     <div>
-      <p>Welcome, {user.name}!</p>
+      <p>Welcome, {user.name} ({user.workspaceRole})</p>
       <button onClick={logout}>Logout</button>
     </div>
   )
 }
 ```
-
-## Next Steps
-
-- [Auth Client](auth-client.md) -- configure the underlying browser client
-- [Next.js Integration](nextjs.md) -- Edge Middleware and server helpers
-- [Server Utilities](server.md) -- JWT verification and permission checks

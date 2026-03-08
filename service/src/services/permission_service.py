@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import select, union
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,24 +17,25 @@ async def register_resource(
     owner_id: uuid.UUID,
     visibility: str = "workspace",
 ) -> ResourcePermission:
-    # Idempotent: return existing if already registered
-    existing = await get_resource_permission(
-        db, service_name, resource_type, resource_id
+    # Atomic upsert: ON CONFLICT DO NOTHING avoids race conditions
+    stmt = (
+        pg_insert(ResourcePermission)
+        .values(
+            service_name=service_name,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            workspace_id=workspace_id,
+            owner_id=owner_id,
+            visibility=visibility,
+        )
+        .on_conflict_do_nothing(
+            index_elements=["service_name", "resource_type", "resource_id"],
+        )
     )
-    if existing:
-        return existing
-    perm = ResourcePermission(
-        service_name=service_name,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        workspace_id=workspace_id,
-        owner_id=owner_id,
-        visibility=visibility,
-    )
-    db.add(perm)
+    await db.execute(stmt)
     await db.commit()
-    await db.refresh(perm, attribute_names=["shares"])
-    return perm
+    # Re-fetch to return the existing or newly inserted record
+    return await get_resource_permission(db, service_name, resource_type, resource_id)
 
 
 async def get_permission_by_id(
