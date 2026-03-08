@@ -1,9 +1,9 @@
-# Configuration
+# Configuration Reference
 
-All configuration is done through environment variables, loaded from `service/.env` (dev) or `.env.prod` (production). The service uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) for validation and type coercion.
+All configuration is via environment variables, loaded from `service/.env` (dev) or `.env.prod` (production). The service uses [Pydantic Settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with `env_file=".env"`.
 
 ```bash
-# make setup generates both automatically; manual alternative:
+# make setup generates both files automatically
 cp .env.dev.example service/.env     # local development
 cp .env.prod.example .env.prod       # production deployment
 ```
@@ -12,60 +12,54 @@ cp .env.prod.example .env.prod       # production deployment
 
 ## Database
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `DATABASE_URL` | `str` | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require` | Async PostgreSQL connection string. Must use the `asyncpg` driver. |
-| `REDIS_URL` | `str` | `rediss://:sentinel_dev@localhost:9002/0` | Redis connection string. `rediss://` enables TLS. |
-| `REDIS_TLS_CA_CERT` | `str` | `""` | Path to CA cert for Redis TLS verification (e.g. `keys/tls/ca.crt`). |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgresql+asyncpg://identity:identity_dev@localhost:9001/identity?ssl=require` | Async PostgreSQL connection string. Must use the `asyncpg` driver. |
+| `REDIS_URL` | `rediss://:sentinel_dev@localhost:9002/0` | Redis connection string. Use `rediss://` for TLS. |
+| `REDIS_TLS_CA_CERT` | `""` | Path to CA cert for Redis TLS verification (e.g. `keys/tls/ca.crt`). |
+| `REDIS_TLS_VERIFY` | `none` | `"none"` or `"required"`. Set to `"required"` in production. |
 
-!!! note "Docker Compose defaults"
-    The default values match the `docker-compose.yml` configuration. If you change ports or credentials in your compose file, update these accordingly.
+The defaults match the `docker-compose.yml` dev configuration.
 
 ---
 
 ## JWT
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `JWT_PRIVATE_KEY_PATH` | `Path` | `keys/private.pem` | Path to the RSA private key used for signing access tokens. |
-| `JWT_PUBLIC_KEY_PATH` | `Path` | `keys/public.pem` | Path to the RSA public key used for verifying access tokens. |
-| `JWT_ALGORITHM` | `str` | `RS256` | Signing algorithm. Only `RS256` is supported. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `int` | `15` | Access token lifetime in minutes. |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | `int` | `7` | Refresh token lifetime in days. |
-| `ADMIN_TOKEN_EXPIRE_MINUTES` | `int` | `60` | Admin token lifetime in minutes. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_PRIVATE_KEY_PATH` | `keys/private.pem` | RSA private key for signing tokens. |
+| `JWT_PUBLIC_KEY_PATH` | `keys/public.pem` | RSA public key for verifying tokens. |
+| `JWT_ALGORITHM` | `RS256` | Signing algorithm. Only RS256 is supported. |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `15` | Access token lifetime. |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh token lifetime. |
+| `ADMIN_TOKEN_EXPIRE_MINUTES` | `60` | Admin panel session token lifetime. |
+| `AUTHZ_TOKEN_EXPIRE_MINUTES` | `5` | AuthZ mode token lifetime. Short by design -- the JS SDK refreshes automatically. |
 
-!!! tip "Key generation"
-    Generate a key pair with:
-    ```bash
-    mkdir -p keys
-    openssl genrsa -out keys/private.pem 2048
-    openssl rsa -in keys/private.pem -pubout -out keys/public.pem
-    ```
-    Or just run `make setup`, which handles this automatically.
+Generate keys manually (or let `make setup` handle it):
 
-!!! warning "Token lifetimes"
-    Short-lived access tokens (15 minutes) with longer refresh tokens (7 days) is the recommended default. The service supports refresh token rotation with reuse detection -- if a refresh token is used twice, all tokens for that session are revoked.
+```bash
+mkdir -p keys
+openssl genrsa -out keys/private.pem 2048
+openssl rsa -in keys/private.pem -pubout -out keys/public.pem
+```
 
 ---
 
 ## OAuth Providers
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `GOOGLE_CLIENT_ID` | `str` | *(empty)* | Google OAuth 2.0 client ID. |
-| `GOOGLE_CLIENT_SECRET` | `str` | *(empty)* | Google OAuth 2.0 client secret. |
-| `GITHUB_CLIENT_ID` | `str` | *(empty)* | GitHub OAuth app client ID. |
-| `GITHUB_CLIENT_SECRET` | `str` | *(empty)* | GitHub OAuth app client secret. |
-| `ENTRA_CLIENT_ID` | `str` | *(empty)* | Microsoft Entra ID (Azure AD) application client ID. |
-| `ENTRA_CLIENT_SECRET` | `str` | *(empty)* | Microsoft Entra ID application client secret. |
-| `ENTRA_TENANT_ID` | `str` | *(empty)* | Microsoft Entra ID tenant ID. Required if using Entra. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GOOGLE_CLIENT_ID` | `""` | Google OAuth 2.0 client ID. |
+| `GOOGLE_CLIENT_SECRET` | `""` | Google OAuth 2.0 client secret. |
+| `GITHUB_CLIENT_ID` | `""` | GitHub OAuth app client ID. |
+| `GITHUB_CLIENT_SECRET` | `""` | GitHub OAuth app client secret. |
+| `ENTRA_CLIENT_ID` | `""` | Microsoft Entra ID application client ID. |
+| `ENTRA_CLIENT_SECRET` | `""` | Microsoft Entra ID application client secret. |
+| `ENTRA_TENANT_ID` | `""` | Microsoft Entra ID tenant ID. Required when using Entra. |
 
-!!! info "Provider activation"
-    A provider is enabled automatically when both its client ID and client secret are set. You can enable any combination of providers simultaneously. At least one provider is required for the service to be useful.
+A provider is enabled when both its client ID and secret are set. You can enable multiple providers simultaneously. At least one is required.
 
-### Callback URLs
-
-When registering your OAuth application with each provider, use the following redirect URIs:
+**Callback URLs** -- register these with your IdP when creating the OAuth application:
 
 | Provider | Redirect URI |
 |----------|-------------|
@@ -73,59 +67,62 @@ When registering your OAuth application with each provider, use the following re
 | GitHub | `{BASE_URL}/auth/callback/github` |
 | Entra ID | `{BASE_URL}/auth/callback/entra` |
 
-Replace `{BASE_URL}` with your service URL (default: `http://localhost:9003`).
+These callbacks are only used for the admin panel's server-side OAuth flow. In AuthZ mode, your frontend authenticates directly with the IdP.
 
 ---
 
 ## Service
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `SERVICE_HOST` | `str` | `0.0.0.0` | Host address the service binds to. |
-| `SERVICE_PORT` | `int` | `9003` | Port the service listens on. |
-| `BASE_URL` | `str` | `http://localhost:9003` | Public URL of Sentinel. Used to construct OAuth callback URLs. |
-| `FRONTEND_URL` | `str` | `http://localhost:3000` | URL of the frontend application. Used for post-login redirects. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SERVICE_HOST` | `0.0.0.0` | Host address the service binds to. |
+| `SERVICE_PORT` | `9003` | Port the service listens on. |
+| `BASE_URL` | `http://localhost:9003` | Public URL of Sentinel. Used for OAuth callback URLs and JWKS endpoint. |
+| `FRONTEND_URL` | `http://localhost:3000` | Default frontend URL for post-login redirects. |
 
 ---
 
 ## Security
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `SESSION_SECRET_KEY` | `str` | `dev-only-change-me-in-production` | Secret key for signing server-side sessions used during OAuth flows. |
-| `CORS_ORIGINS` | `str` | `http://localhost:3000,http://localhost:9101` | Comma-separated list of static CORS origins. Combined with origins from registered client apps at runtime. |
-| `COOKIE_SECURE` | `bool` | `false` | Set to `true` in production to mark cookies as `Secure` (requires HTTPS). |
-| `ALLOWED_HOSTS` | `str` | *(empty)* | Derived from `BASE_URL` and `ADMIN_URL` hostnames. Falls back to `*` (allow all) only if no hostnames found. Override with comma-separated hostnames. |
-| `DEBUG` | `bool` | `false` | Set `true` for local development. Enables `/docs` and `/redoc`, relaxes startup validation to warnings instead of hard failures. |
-| `BEHIND_PROXY` | `bool` | `false` | Set `true` when behind a reverse proxy (nginx, Caddy, ALB). Enables proxy-aware rate limiting using `X-Forwarded-For`. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_SECRET_KEY` | `dev-only-change-me-in-production` | **Required in production.** Secret for signing server-side sessions during OAuth flows. Generate with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `CORS_ORIGINS` | `http://localhost:3000,http://localhost:9101` | Comma-separated CORS origins. Combined with origins from registered service apps at runtime. |
+| `COOKIE_SECURE` | `false` | Set `true` in production (requires HTTPS). |
+| `ALLOWED_HOSTS` | `""` | Comma-separated hostnames. Empty = derived from `BASE_URL` + `ADMIN_URL`. |
+| `DEBUG` | `false` | Enables `/docs` and `/redoc` Swagger UI. Relaxes startup validation. |
+| `BEHIND_PROXY` | `false` | Set `true` behind a reverse proxy (nginx, ALB). Enables `X-Forwarded-For` for rate limiting. |
 
-!!! danger "Production security checklist"
-    Before deploying to production, you **must**:
+**Production checklist:**
 
-    - Set `SESSION_SECRET_KEY` to a unique, random value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`)
-    - Set `COOKIE_SECURE=true` (your deployment must use HTTPS)
-    - Set `ALLOWED_HOSTS` to your actual domain(s)
-    - Register at least one service app via the admin panel (`/admin/service-apps`)
-    - Restrict `CORS_ORIGINS` to your frontend domain(s)
-
-!!! info "Comma-separated values"
-    `CORS_ORIGINS` and `ALLOWED_HOSTS` accept multiple values separated by commas:
-    ```dotenv
-    CORS_ORIGINS=https://app.example.com,https://admin.example.com
-    ALLOWED_HOSTS=api.example.com,identity.example.com
-    ```
-
-!!! note "Service API keys"
-    Service API keys are configured through the admin panel under **Service Apps** (`/admin/service-apps`), not via environment variables. Each key is scoped to a `service_name` and stored as a SHA-256 hash. See the [Service Authentication guide](../guide/service-auth.md) for details.
+- `SESSION_SECRET_KEY` -- unique random value (not the default)
+- `COOKIE_SECURE=true` -- deployment must use HTTPS
+- `ALLOWED_HOSTS` -- your actual domain(s)
+- `CORS_ORIGINS` -- your frontend domain(s) only
+- `REDIS_TLS_VERIFY=required`
+- `DEBUG=false`
 
 ---
 
 ## Admin
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `ADMIN_EMAILS` | `str` | *(empty)* | Comma-separated list of email addresses granted admin access. |
-| `ADMIN_URL` | `str` | `http://localhost:9004` | URL where the admin UI is served. Used for CORS and redirect configuration. |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ADMIN_EMAILS` | `""` | Comma-separated emails granted admin access. Must be set before first admin login. |
+| `ADMIN_URL` | `http://localhost:9004` | URL where the admin UI is served. Used for CORS and host validation. |
 
-!!! tip "Granting admin access"
-    Add email addresses to `ADMIN_EMAILS` to allow those users to access the admin panel after logging in via OAuth. You can also use the `make create-admin` command to promote an existing user interactively.
+Add emails before starting the service. You can also promote existing users with `make create-admin`.
+
+---
+
+## Notes
+
+**Service API keys** are managed through the admin panel (Service Apps), not environment variables. Each key is scoped to a `service_name` and stored as a SHA-256 hash.
+
+**Comma-separated values** -- `CORS_ORIGINS`, `ALLOWED_HOSTS`, and `ADMIN_EMAILS` all accept multiple values separated by commas:
+
+```dotenv
+CORS_ORIGINS=https://app.example.com,https://admin.example.com
+ALLOWED_HOSTS=api.example.com,admin.example.com
+ADMIN_EMAILS=alice@example.com,bob@example.com
+```
