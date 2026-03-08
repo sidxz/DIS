@@ -22,9 +22,7 @@ class TestAuthzClient:
             "workspaces": None,
         }
         with respx.mock:
-            respx.post("http://sentinel:9003/authz/resolve").mock(
-                return_value=Response(200, json=mock_response)
-            )
+            respx.post("http://sentinel:9003/authz/resolve").mock(return_value=Response(200, json=mock_response))
             async with AuthzClient("http://sentinel:9003", service_key="sk_test") as client:
                 result = await client.resolve(
                     idp_token="fake-idp-token",
@@ -46,9 +44,7 @@ class TestAuthzClient:
             "expires_in": None,
         }
         with respx.mock:
-            respx.post("http://sentinel:9003/authz/resolve").mock(
-                return_value=Response(200, json=mock_response)
-            )
+            respx.post("http://sentinel:9003/authz/resolve").mock(return_value=Response(200, json=mock_response))
             async with AuthzClient("http://sentinel:9003", service_key="sk_test") as client:
                 result = await client.resolve(idp_token="fake", provider="google")
                 assert len(result["workspaces"]) == 1
