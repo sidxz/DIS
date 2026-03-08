@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release pentest pentest-custom pentest-setup
+.PHONY: help setup start admin seed create-admin status clean nuke docs docs-serve lint fmt release pentest pentest-custom pentest-setup pentest-kali pentest-kali-stop
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -76,7 +76,7 @@ setup: ## One-time setup: keys, TLS certs, env files, deps, dev containers
 	@echo "    docker stack deploy -c docker-compose.prod.yml sentinel"
 
 start: ## Start identity service (:9003) — auto-migrates on boot
-	cd service && uv run uvicorn src.main:app --port 9003 --reload
+	cd service && uv run uvicorn src.main:app --port 9003 --reload --no-server-header
 
 admin: ## Start admin UI dev server (:9004)
 	cd admin && npm run dev
@@ -128,3 +128,18 @@ pentest: ## Run full pentest suite (tools + custom scripts)
 
 pentest-custom: ## Run custom pentest scripts only
 	cd pentest && python run_all.py --custom
+
+pentest-kali: ## Launch Kali Linux container on sentinel network
+	docker compose -f docker-compose.yml -f docker-compose.pentest.yml up -d kali
+	@echo ""
+	@echo "  Kali container ready. Connect with:"
+	@echo "    docker exec -it sentinel-kali bash"
+	@echo ""
+	@echo "  Inside the container:"
+	@echo "    nmap -sV sentinel -p 9003"
+	@echo "    nikto -h http://sentinel:9003"
+	@echo "    cd /pentest && pip3 install -r requirements.txt"
+	@echo "    BASE_URL=http://sentinel:9003 python3 run_all.py --custom"
+
+pentest-kali-stop: ## Stop and remove Kali container
+	docker compose -f docker-compose.yml -f docker-compose.pentest.yml down kali
