@@ -23,7 +23,7 @@ from src.schemas.auth import (
     TokenResponse,
     WorkspaceOptionResponse,
 )
-from src.middleware.rate_limit import limiter
+from src.middleware.rate_limit import get_client_ip, limiter
 from src.services import (
     activity_service,
     auth_code_service,
@@ -218,7 +218,7 @@ async def callback(
             actor_id=user.id,
             detail={
                 "provider": provider,
-                "ip": request.client.host if request.client else None,
+                "ip": get_client_ip(request),
             },
         )
         await db.commit()
@@ -489,7 +489,7 @@ async def admin_callback(
             actor_id=user.id,
             detail={
                 "provider": provider,
-                "ip": request.client.host if request.client else None,
+                "ip": get_client_ip(request),
             },
         )
         await db.commit()

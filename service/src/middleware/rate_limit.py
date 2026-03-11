@@ -19,12 +19,11 @@ _FALLBACK_LIMIT = 30  # requests per window
 _fallback_request_count = 0
 
 
-def _proxy_aware_key_func(request: Request) -> str:
+def get_client_ip(request: Request) -> str:
     """Extract client IP, respecting X-Forwarded-For when behind a proxy."""
     if settings.behind_proxy:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            # First IP is the original client per X-Forwarded-For convention
             return forwarded.split(",")[0].strip()
     if request.client:
         return request.client.host
@@ -32,7 +31,7 @@ def _proxy_aware_key_func(request: Request) -> str:
 
 
 limiter = Limiter(
-    key_func=_proxy_aware_key_func,
+    key_func=get_client_ip,
     storage_uri=settings.redis_url,
     storage_options=settings.redis_ssl_kwargs,
 )
@@ -89,7 +88,7 @@ class GlobalRateLimitMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/health":
             return await call_next(request)
 
-        ip = _proxy_aware_key_func(request)
+        ip = get_client_ip(request)
         key = f"rl:global:{ip}"
 
         try:
