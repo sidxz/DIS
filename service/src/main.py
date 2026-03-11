@@ -67,12 +67,6 @@ async def lifespan(app: FastAPI):
     )
     _insecure_cookie = not settings.cookie_secure
 
-    # Check service apps in DB
-    from src.services import service_app_service
-
-    async with AsyncSession(db_engine) as db:
-        _no_service_apps = not await service_app_service.has_active_apps(db)
-
     # Redis connectivity and auth check
     _redis_down = False
     _redis_no_auth = False
@@ -96,10 +90,6 @@ async def lifespan(app: FastAPI):
         errors = []
         if _insecure_session:
             errors.append("SESSION_SECRET_KEY is using the default dev value")
-        if _no_service_apps:
-            errors.append(
-                "No active service apps registered — all service-key endpoints will return 401"
-            )
         if _insecure_cookie:
             errors.append("COOKIE_SECURE is False — cookies will be sent over HTTP")
         if _redis_down:
@@ -133,11 +123,6 @@ async def lifespan(app: FastAPI):
         if _insecure_session:
             logger.warning(
                 "SESSION_SECRET_KEY is using the default dev value — set a random secret in production"
-            )
-        if _no_service_apps:
-            logger.warning(
-                "No active service apps registered — service-key endpoints will return 401. "
-                "Create one via the admin panel (/admin/service-apps)"
             )
         if _insecure_cookie:
             logger.warning(

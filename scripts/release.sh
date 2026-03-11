@@ -94,7 +94,11 @@ git tag "service-v${VERSION}"
 git tag "admin-v${VERSION}"
 
 git push origin main
-git push origin "js-sdk-v${VERSION}" "sdk-v${VERSION}" "service-v${VERSION}" "admin-v${VERSION}"
+# Push tags individually — GitHub Actions drops events when multiple tags are pushed at once
+git push origin "js-sdk-v${VERSION}"
+git push origin "sdk-v${VERSION}"
+git push origin "service-v${VERSION}"
+git push origin "admin-v${VERSION}"
 
 echo ""
 echo "Released v${VERSION}:"
