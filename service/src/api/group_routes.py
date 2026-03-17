@@ -1,9 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import CurrentUser, get_current_user
+from src.middleware.rate_limit import limiter
+
+from src.api.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_current_user_flexible,
+)
 from src.database import get_db
 from src.schemas.group import (
     GroupCreateRequest,
@@ -48,7 +54,7 @@ async def create_group(
 @router.get("", response_model=list[GroupResponse])
 async def list_groups(
     workspace_id: uuid.UUID,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_db),
 ):
     _require_workspace_match(user, workspace_id)
@@ -83,10 +89,12 @@ async def delete_group(
 
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
+@limiter.limit("60/minute")
 async def list_group_members(
+    request: Request,
     workspace_id: uuid.UUID,
     group_id: uuid.UUID,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_db),
 ):
     _require_workspace_match(user, workspace_id)

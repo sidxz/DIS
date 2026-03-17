@@ -98,6 +98,27 @@ async def share_resource(
     permission: str,
     granted_by: uuid.UUID,
 ) -> ResourceShare:
+    # Validate grantee belongs to the resource's workspace
+    perm = await get_permission_by_id(db, permission_id)
+    if not perm:
+        raise ValueError("Resource permission not found")
+
+    if grantee_type == "user":
+        from src.models.workspace import WorkspaceMembership
+
+        stmt = select(WorkspaceMembership).where(
+            WorkspaceMembership.workspace_id == perm.workspace_id,
+            WorkspaceMembership.user_id == grantee_id,
+        )
+        if not (await db.execute(stmt)).scalar_one_or_none():
+            raise ValueError("Grantee is not a member of this workspace")
+    elif grantee_type == "group":
+        from src.models.group import Group
+
+        group = await db.get(Group, grantee_id)
+        if not group or group.workspace_id != perm.workspace_id:
+            raise ValueError("Group does not belong to this workspace")
+
     share = ResourceShare(
         resource_permission_id=permission_id,
         grantee_type=grantee_type,

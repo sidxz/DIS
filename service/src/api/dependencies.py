@@ -142,6 +142,74 @@ async def get_user_for_service_call(request: Request) -> CurrentUser:
     )
 
 
+async def get_current_user_flexible(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> CurrentUser:
+    """Extract user context — accepts access tokens always, authz tokens only with valid service key.
+
+    Use this on endpoints that need to work in both proxy mode (browser → access token)
+    and authz mode (backend → service key + authz token).
+
+    Security: authz tokens are only accepted when X-Service-Key is present AND validated
+    against the database. A fake/invalid service key is rejected, and the caller falls back
+    to access-token-only mode.
+    """
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    token = auth.removeprefix("Bearer ")
+    if len(token) > 8192:
+        raise HTTPException(status_code=401, detail="Token too large")
+
+    # Validate the service key against the database — not just check for presence
+    has_valid_service_key = False
+    raw_key = request.headers.get("X-Service-Key")
+    if raw_key:
+        from src.services import service_app_service
+
+        result = await service_app_service.validate_key(raw_key, db)
+        has_valid_service_key = result is not None
+
+    audiences = [_AUD_ACCESS, _AUD_AUTHZ] if has_valid_service_key else _AUD_ACCESS
+
+    try:
+        payload = decode_token(token, audience=audiences)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    token_type = payload.get("type")
+    valid_types = ("access", "authz") if has_valid_service_key else ("access",)
+    if token_type not in valid_types:
+        raise HTTPException(status_code=401, detail="Invalid token type")
+
+    if not all(k in payload for k in ("sub", "wid", "wrole")):
+        raise HTTPException(status_code=401, detail="Token missing required claims")
+
+    # For access tokens, check revocation and deactivation
+    if token_type == "access":
+        if jti := payload.get("jti"):
+            from src.services.token_service import is_access_token_blacklisted
+
+            if await is_access_token_blacklisted(jti):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
+
+        user_id = payload.get("sub")
+        if user_id:
+            from src.services.token_service import is_user_deactivated
+
+            if await is_user_deactivated(user_id):
+                raise HTTPException(
+                    status_code=401, detail="User account is deactivated"
+                )
+
+    return CurrentUser(
+        user_id=uuid.UUID(payload["sub"]),
+        workspace_id=uuid.UUID(payload["wid"]),
+        workspace_role=payload["wrole"],
+        groups=[uuid.UUID(g) for g in payload.get("groups", [])],
+    )
+
+
 @dataclass(frozen=True)
 class ServiceKeyContext:
     """Resolved service identity from X-Service-Key header or Origin."""

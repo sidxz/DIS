@@ -1,9 +1,15 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies import CurrentUser, get_current_user
+from src.middleware.rate_limit import limiter
+
+from src.api.dependencies import (
+    CurrentUser,
+    get_current_user,
+    get_current_user_flexible,
+)
 from src.database import get_db
 from src.schemas.workspace import (
     InviteMemberRequest,
@@ -100,11 +106,13 @@ async def delete_workspace(
 
 
 @router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberResponse])
+@limiter.limit("60/minute")
 async def list_members(
+    request: Request,
     workspace_id: uuid.UUID,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(get_current_user_flexible),
     db: AsyncSession = Depends(get_db),
-    q: str | None = None,
+    q: str | None = Query(default=None, max_length=100),
     limit: int | None = None,
 ):
     _require_workspace_match(user, workspace_id)

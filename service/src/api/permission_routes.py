@@ -1,8 +1,10 @@
 import uuid
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.middleware.rate_limit import limiter
 
 from src.api.dependencies import (
     CurrentUser,
@@ -125,14 +127,17 @@ async def share_resource(
             detail="Only the resource owner or workspace admin can share",
         )
 
-    await permission_service.share_resource(
-        db,
-        permission_id=permission_id,
-        grantee_type=body.grantee_type,
-        grantee_id=body.grantee_id,
-        permission=body.permission,
-        granted_by=user.user_id,
-    )
+    try:
+        await permission_service.share_resource(
+            db,
+            permission_id=permission_id,
+            grantee_type=body.grantee_type,
+            grantee_id=body.grantee_id,
+            permission=body.permission,
+            granted_by=user.user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"status": "ok"}
 
 
@@ -240,7 +245,9 @@ async def get_resource_acl(
     "/resource/{service_name}/{resource_type}/{resource_id}/enriched",
     response_model=EnrichedResourcePermissionResponse,
 )
+@limiter.limit("30/minute")
 async def get_enriched_resource_acl(
+    request: Request,
     service_name: str,
     resource_type: str,
     resource_id: uuid.UUID,
