@@ -104,9 +104,13 @@ async def list_members(
     workspace_id: uuid.UUID,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    q: str | None = None,
+    limit: int | None = None,
 ):
     _require_workspace_match(user, workspace_id)
-    return await workspace_service.list_members(db, workspace_id)
+    if limit is not None:
+        limit = min(max(limit, 1), 50)
+    return await workspace_service.list_members(db, workspace_id, q=q, limit=limit)
 
 
 @router.post(

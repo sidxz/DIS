@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.models.permission import ResourcePermission, ResourceShare
+from src.models.user import User
 
 
 async def register_resource(
@@ -126,6 +127,71 @@ async def revoke_share(
         raise ValueError("Share not found")
     await db.delete(share)
     await db.commit()
+
+
+async def get_enriched_resource_permission(
+    db: AsyncSession,
+    service_name: str,
+    resource_type: str,
+    resource_id: uuid.UUID,
+) -> dict | None:
+    """Get resource permission with user profiles resolved inline."""
+    perm = await get_resource_permission(db, service_name, resource_type, resource_id)
+    if not perm:
+        return None
+
+    # Collect all user IDs to resolve in one query
+    user_ids: set[uuid.UUID] = set()
+    if perm.owner_id:
+        user_ids.add(perm.owner_id)
+    for share in perm.shares:
+        if share.grantee_type == "user":
+            user_ids.add(share.grantee_id)
+        if share.granted_by:
+            user_ids.add(share.granted_by)
+
+    # Batch resolve user profiles
+    profiles: dict[uuid.UUID, User] = {}
+    if user_ids:
+        stmt = select(User).where(User.id.in_(user_ids))
+        result = await db.execute(stmt)
+        for u in result.scalars().all():
+            profiles[u.id] = u
+
+    owner = profiles.get(perm.owner_id) if perm.owner_id else None
+    enriched_shares = []
+    for share in perm.shares:
+        grantee = (
+            profiles.get(share.grantee_id) if share.grantee_type == "user" else None
+        )
+        granter = profiles.get(share.granted_by) if share.granted_by else None
+        enriched_shares.append(
+            {
+                "id": share.id,
+                "grantee_type": share.grantee_type,
+                "grantee_id": share.grantee_id,
+                "grantee_name": grantee.name if grantee else None,
+                "grantee_email": grantee.email if grantee else None,
+                "permission": share.permission,
+                "granted_by": share.granted_by,
+                "granted_by_name": granter.name if granter else None,
+                "granted_at": share.granted_at,
+            }
+        )
+
+    return {
+        "id": perm.id,
+        "service_name": perm.service_name,
+        "resource_type": perm.resource_type,
+        "resource_id": perm.resource_id,
+        "workspace_id": perm.workspace_id,
+        "owner_id": perm.owner_id,
+        "owner_name": owner.name if owner else None,
+        "owner_email": owner.email if owner else None,
+        "visibility": perm.visibility,
+        "created_at": perm.created_at,
+        "shares": enriched_shares,
+    }
 
 
 async def check_permission(

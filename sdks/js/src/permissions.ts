@@ -120,6 +120,32 @@ export class PermissionClient {
     return res.json() as Promise<AccessibleResult>
   }
 
+  /** Get ACL with user profiles resolved inline (names, emails). */
+  async getEnrichedResourceAcl(
+    resourceType: string,
+    resourceId: string,
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(
+      `${this.baseUrl}/permissions/resource/${this.serviceName}/${resourceType}/${resourceId}/enriched`,
+      { headers: this.headers() },
+    )
+    if (!res.ok) throw new Error(`Enriched ACL lookup failed: ${res.status}`)
+    return res.json()
+  }
+
+  /** Get raw ACL record for a resource. */
+  async getResourceAcl(
+    resourceType: string,
+    resourceId: string,
+  ): Promise<Record<string, unknown>> {
+    const res = await fetch(
+      `${this.baseUrl}/permissions/resource/${this.serviceName}/${resourceType}/${resourceId}`,
+      { headers: this.headers() },
+    )
+    if (!res.ok) throw new Error(`ACL lookup failed: ${res.status}`)
+    return res.json()
+  }
+
   private headers(token?: string): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' }
     if (this.serviceKey) h['X-Service-Key'] = this.serviceKey

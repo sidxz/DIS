@@ -199,6 +199,139 @@ class PermissionClient:
             data["has_full_access"],
         )
 
+    async def unshare(
+        self,
+        token: str,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        grantee_type: str,
+        grantee_id: uuid.UUID,
+        permission: str = "view",
+    ) -> dict:
+        """Revoke a share on a resource.
+
+        Looks up the permission record by resource coordinates, then revokes.
+        """
+        lookup = await self._client.get(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
+            headers=self._headers(),
+        )
+        self._check(lookup)
+        permission_id = lookup.json()["id"]
+
+        response = await self._client.request(
+            "DELETE",
+            f"/permissions/{permission_id}/share",
+            headers=self._headers(token),
+            json={
+                "grantee_type": grantee_type,
+                "grantee_id": str(grantee_id),
+                "permission": permission,
+            },
+        )
+        self._check(response)
+        return response.json()
+
+    async def update_visibility(
+        self,
+        token: str,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        visibility: str,
+    ) -> dict:
+        """Update resource visibility (private/workspace).
+
+        Looks up the permission record by resource coordinates, then patches.
+        """
+        lookup = await self._client.get(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
+            headers=self._headers(),
+        )
+        self._check(lookup)
+        permission_id = lookup.json()["id"]
+
+        response = await self._client.patch(
+            f"/permissions/{permission_id}/visibility",
+            headers=self._headers(token),
+            json={"visibility": visibility},
+        )
+        self._check(response)
+        return response.json()
+
+    async def get_resource_acl(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> dict:
+        """Get the full ACL record for a resource, including shares."""
+        response = await self._client.get(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}",
+            headers=self._headers(),
+        )
+        self._check(response)
+        return response.json()
+
+    async def get_enriched_resource_acl(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> dict:
+        """Get the ACL with user profiles resolved inline (names, emails)."""
+        response = await self._client.get(
+            f"/permissions/resource/{self.service_name}/{resource_type}/{resource_id}/enriched",
+            headers=self._headers(),
+        )
+        self._check(response)
+        return response.json()
+
+    async def search_workspace_members(
+        self,
+        token: str,
+        workspace_id: uuid.UUID,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Search workspace members by name or email."""
+        params: dict[str, str] = {}
+        if query:
+            params["q"] = query
+        if limit is not None:
+            params["limit"] = str(limit)
+        response = await self._client.get(
+            f"/workspaces/{workspace_id}/members",
+            headers=self._headers(token),
+            params=params,
+        )
+        self._check(response)
+        return response.json()
+
+    async def list_groups(
+        self,
+        token: str,
+        workspace_id: uuid.UUID,
+    ) -> list[dict]:
+        """List groups in a workspace."""
+        response = await self._client.get(
+            f"/workspaces/{workspace_id}/groups",
+            headers=self._headers(token),
+        )
+        self._check(response)
+        return response.json()
+
+    async def get_group_members(
+        self,
+        token: str,
+        workspace_id: uuid.UUID,
+        group_id: uuid.UUID,
+    ) -> list[dict]:
+        """List members of a group."""
+        response = await self._client.get(
+            f"/workspaces/{workspace_id}/groups/{group_id}/members",
+            headers=self._headers(token),
+        )
+        self._check(response)
+        return response.json()
+
     async def close(self):
         await self._client.aclose()
 

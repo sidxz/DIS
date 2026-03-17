@@ -15,6 +15,7 @@ from src.database import get_db
 from src.schemas.permission import (
     AccessibleResourcesRequest,
     AccessibleResourcesResponse,
+    EnrichedResourcePermissionResponse,
     PermissionCheckRequest,
     PermissionCheckResponse,
     PermissionCheckResult,
@@ -233,3 +234,24 @@ async def get_resource_acl(
     if not perm:
         raise HTTPException(status_code=404, detail="Resource not found")
     return perm
+
+
+@router.get(
+    "/resource/{service_name}/{resource_type}/{resource_id}/enriched",
+    response_model=EnrichedResourcePermissionResponse,
+)
+async def get_enriched_resource_acl(
+    service_name: str,
+    resource_type: str,
+    resource_id: uuid.UUID,
+    svc: ServiceKeyContext = Depends(require_service_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get resource ACL with user profiles resolved inline (names, emails)."""
+    verify_service_scope(svc, service_name)
+    result = await permission_service.get_enriched_resource_permission(
+        db, service_name, resource_type, resource_id
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    return result

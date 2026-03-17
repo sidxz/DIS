@@ -6,6 +6,10 @@ import type {
   AuthzTokenStore,
   AuthzResolveResponse,
   IdpConfig,
+  WorkspaceMember,
+  GroupInfo,
+  GroupMemberInfo,
+  UserProfile,
 } from './authz-types'
 import type { SentinelUser } from './types'
 
@@ -275,6 +279,49 @@ export class SentinelAuthz {
   destroy(): void {
     this.clearRefreshTimer()
     this.listeners.clear()
+  }
+
+  // ── Workspace & group helpers ──────────────────────────────────────
+
+  /**
+   * Search workspace members by name or email.
+   * Calls Sentinel's GET /workspaces/{id}/members?q=&limit= with dual-token auth.
+   */
+  async searchMembers(query?: string, limit?: number): Promise<WorkspaceMember[]> {
+    const user = this.getUser()
+    if (!user) throw new Error('Not authenticated')
+    const params = new URLSearchParams()
+    if (query) params.set('q', query)
+    if (limit !== undefined) params.set('limit', String(limit))
+    const qs = params.toString()
+    const url = `${this.sentinelUrl}/workspaces/${user.workspaceId}/members${qs ? `?${qs}` : ''}`
+    return this.fetchJson<WorkspaceMember[]>(url)
+  }
+
+  /** List all members of the current workspace. */
+  async listMembers(limit?: number): Promise<WorkspaceMember[]> {
+    return this.searchMembers(undefined, limit)
+  }
+
+  /** List groups in the current workspace. */
+  async listGroups(): Promise<GroupInfo[]> {
+    const user = this.getUser()
+    if (!user) throw new Error('Not authenticated')
+    return this.fetchJson<GroupInfo[]>(`${this.sentinelUrl}/workspaces/${user.workspaceId}/groups`)
+  }
+
+  /** List members of a group. */
+  async getGroupMembers(groupId: string): Promise<GroupMemberInfo[]> {
+    const user = this.getUser()
+    if (!user) throw new Error('Not authenticated')
+    return this.fetchJson<GroupMemberInfo[]>(
+      `${this.sentinelUrl}/workspaces/${user.workspaceId}/groups/${groupId}/members`,
+    )
+  }
+
+  /** Get current user's full profile (includes avatar_url). */
+  async getProfile(): Promise<UserProfile> {
+    return this.fetchJson<UserProfile>(`${this.sentinelUrl}/users/me`)
   }
 
   // ── Private ───────────────────────────────────────────────────────

@@ -70,13 +70,23 @@ async def delete_workspace(db: AsyncSession, workspace_id: uuid.UUID) -> None:
     await db.commit()
 
 
-async def list_members(db: AsyncSession, workspace_id: uuid.UUID) -> list[dict]:
+async def list_members(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    q: str | None = None,
+    limit: int | None = None,
+) -> list[dict]:
     stmt = (
         select(WorkspaceMembership, User)
         .join(User, WorkspaceMembership.user_id == User.id)
         .where(WorkspaceMembership.workspace_id == workspace_id)
-        .order_by(WorkspaceMembership.joined_at)
     )
+    if q:
+        pattern = f"%{q}%"
+        stmt = stmt.where(User.name.ilike(pattern) | User.email.ilike(pattern))
+    stmt = stmt.order_by(WorkspaceMembership.joined_at)
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     return [
         {

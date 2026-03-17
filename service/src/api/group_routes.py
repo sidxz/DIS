@@ -5,7 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.dependencies import CurrentUser, get_current_user
 from src.database import get_db
-from src.schemas.group import GroupCreateRequest, GroupResponse, GroupUpdateRequest
+from src.schemas.group import (
+    GroupCreateRequest,
+    GroupMemberResponse,
+    GroupResponse,
+    GroupUpdateRequest,
+)
 from src.services import group_service
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/groups", tags=["groups"])
@@ -75,6 +80,24 @@ async def delete_group(
     _require_workspace_match(user, workspace_id)
     _require_role(user, "admin")
     await group_service.delete_group(db, group_id, workspace_id)
+
+
+@router.get("/{group_id}/members", response_model=list[GroupMemberResponse])
+async def list_group_members(
+    workspace_id: uuid.UUID,
+    group_id: uuid.UUID,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_workspace_match(user, workspace_id)
+    # Verify group belongs to this workspace (prevents cross-workspace enumeration)
+    from src.services.group_service import _get_group_in_workspace
+
+    try:
+        await _get_group_in_workspace(db, group_id, workspace_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return await group_service.list_group_members(db, group_id)
 
 
 @router.post("/{group_id}/members/{member_user_id}", status_code=201)

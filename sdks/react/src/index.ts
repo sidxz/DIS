@@ -18,4 +18,8 @@ export type {
   SentinelAuthzConfig,
   AuthzTokenStore,
   AuthzResolveResponse,
+  WorkspaceMember,
+  GroupInfo,
+  GroupMemberInfo,
+  UserProfile,
 } from '@sentinel-auth/js'

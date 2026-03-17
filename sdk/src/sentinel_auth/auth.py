@@ -129,3 +129,126 @@ class RequestAuth:
             owner_id=self.user.user_id,
             visibility=visibility,
         )
+
+    async def share(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        grantee_type: str,
+        grantee_id: uuid.UUID,
+        permission: str = "view",
+    ) -> dict:
+        """Share a resource with a user or group."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.share(
+            self._token,
+            resource_type,
+            resource_id,
+            grantee_type,
+            grantee_id,
+            permission,
+        )
+
+    async def unshare(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        grantee_type: str,
+        grantee_id: uuid.UUID,
+        permission: str = "view",
+    ) -> dict:
+        """Revoke a share on a resource."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.unshare(
+            self._token,
+            resource_type,
+            resource_id,
+            grantee_type,
+            grantee_id,
+            permission,
+        )
+
+    async def update_visibility(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+        visibility: str,
+    ) -> dict:
+        """Update resource visibility (private/workspace)."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.update_visibility(
+            self._token,
+            resource_type,
+            resource_id,
+            visibility,
+        )
+
+    async def get_resource_acl(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> dict:
+        """Get the full ACL record for a resource, including shares."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.get_resource_acl(resource_type, resource_id)
+
+    async def get_enriched_resource_acl(
+        self,
+        resource_type: str,
+        resource_id: uuid.UUID,
+    ) -> dict:
+        """Get ACL with user profiles resolved inline (names, emails)."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.get_enriched_resource_acl(resource_type, resource_id)
+
+    # -- Workspace / group helpers (auto-inject workspace_id from JWT) --------
+
+    async def search_members(
+        self,
+        query: str | None = None,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """Search workspace members by name or email."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.search_workspace_members(
+            self._token,
+            self.user.workspace_id,
+            query,
+            limit,
+        )
+
+    async def list_members(
+        self,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """List all members of the current workspace."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.search_workspace_members(
+            self._token,
+            self.user.workspace_id,
+            query=None,
+            limit=limit,
+        )
+
+    async def list_groups(self) -> list[dict]:
+        """List groups in the current workspace."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.list_groups(self._token, self.user.workspace_id)
+
+    async def get_group_members(self, group_id: uuid.UUID) -> list[dict]:
+        """List members of a group in the current workspace."""
+        if self._permissions is None:
+            raise SentinelError("PermissionClient not configured on this RequestAuth")
+        return await self._permissions.get_group_members(
+            self._token,
+            self.user.workspace_id,
+            group_id,
+        )

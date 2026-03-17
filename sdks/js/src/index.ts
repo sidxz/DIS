@@ -36,4 +36,8 @@ export type {
   AuthzWorkspaceInfo,
   IdpConfig,
   UserIdentity,
+  WorkspaceMember,
+  GroupInfo,
+  GroupMemberInfo,
+  UserProfile,
 } from './authz-types'

@@ -89,4 +89,40 @@ export interface AuthzWorkspaceInfo {
   role: WorkspaceRole
 }
 
+// ── Workspace & group types for SentinelAuthz helpers ───────────────
+
+export interface WorkspaceMember {
+  user_id: string
+  email: string
+  name: string
+  avatar_url: string | null
+  role: WorkspaceRole
+  joined_at: string
+}
+
+export interface GroupInfo {
+  id: string
+  workspace_id: string
+  name: string
+  description: string | null
+  created_by: string
+  created_at: string
+}
+
+export interface GroupMemberInfo {
+  user_id: string
+  email: string
+  name: string
+  added_at: string
+}
+
+export interface UserProfile {
+  id: string
+  email: string
+  name: string
+  avatar_url: string | null
+  is_active: boolean
+  created_at: string
+}
+
 export { SentinelUser, WorkspaceRole }
